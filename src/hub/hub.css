@@ -36,3 +36,13 @@
 .timeline-now { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--red); pointer-events: none; z-index: 4; }
 .timeline-mobile-list { display: none; }.timeline-mobile-booking { display: flex; flex-direction: column; width: 100%; text-align: left; gap: 6px; padding: 12px; border: 0; border-bottom: 1px solid var(--border); background: var(--surface); color: var(--text); }
 @media(max-width:760px) { .timeline-scroll { display: none; }.timeline-mobile-list { display: block; }.timeline-controls { gap: 5px; }.timeline-mobile-booking span, .timeline-mobile-booking small { font-size: 11px; color: var(--text-secondary); } }
+.timeline-slots { touch-action: none; }
+.timeline-grid.is-selecting { user-select: none; cursor: crosshair; }
+.timeline-selection { position: absolute; top: 3px; bottom: 3px; z-index: 7; background: color-mix(in srgb,var(--blue) 20%,transparent); outline: 2px solid var(--blue); pointer-events: none; border-radius: 4px; }
+.timeline-selection.has-conflict { background: color-mix(in srgb,var(--red) 20%,transparent); outline-color: var(--red); }
+.timeline-drag-feedback { position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%); z-index: 110; max-width: 650px; max-height: 180px; overflow: auto; box-shadow: var(--shadow); padding: 12px 16px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface-solid); font-size: 12px; }
+.timeline-selection-summary { color: var(--blue); }
+.hub-gpu-picker button.has-conflict { border-color: var(--red); }.hub-gpu-picker button.has-conflict small { color: var(--red); }
+.reservation-warning { color: var(--orange); background: color-mix(in srgb,var(--orange) 8%,var(--surface)); padding: 8px 10px; border-radius: 6px; font-size: 11px; }
+.reservation-warning ul, .hub-form-error ul { margin: 6px 0; padding-left: 18px; }.reservation-warning li, .hub-form-error li { margin: 5px 0; }
+.reservation-submit-error { white-space: pre-wrap; }

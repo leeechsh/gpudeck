@@ -252,26 +252,61 @@ async fn create_reservation(
         .bind(user.id.to_string())
         .execute(&mut *transaction)
         .await?;
-    let overlap_count: i64 = sqlx::query_scalar(
-        "SELECT count(DISTINCT a.gpu_id) FROM reservation_allocations a JOIN reservations r ON r.id=a.reservation_id
+    let overlaps = sqlx::query(
+        "SELECT lower(a.slot) AS starts_at,upper(a.slot) AS ends_at FROM reservation_allocations a JOIN reservations r ON r.id=a.reservation_id
          WHERE r.owner_id=$1 AND a.slot && tstzrange($2,$3,'[)')"
-    ).bind(user.id).bind(input.starts_at).bind(input.ends_at).fetch_one(&mut *transaction).await?;
-    if overlap_count + input.gpu_ids.len() as i64 > user.concurrent_gpu_limit as i64 {
-        return Err(ApiError(
-            StatusCode::CONFLICT,
-            format!("同一时段最多预约 {} 张 GPU", user.concurrent_gpu_limit),
-        ));
-    }
-    let available: i64 = sqlx::query_scalar(
-        "SELECT count(*) FROM gpus WHERE id=ANY($1) AND maintenance=false AND missing=false",
+    ).bind(user.id).bind(input.starts_at).bind(input.ends_at).fetch_all(&mut *transaction).await?;
+    let intervals: Vec<_> = overlaps
+        .iter()
+        .map(|row| (row.get("starts_at"), row.get("ends_at")))
+        .collect();
+    let peak =
+        peak_allocations(&intervals, input.starts_at, input.ends_at) + input.gpu_ids.len() as i64;
+    let resources = sqlx::query(
+        "SELECT g.id,g.display_index,g.maintenance,g.missing,n.name AS node_name,n.enabled FROM gpus g JOIN nodes n ON n.id=g.node_id WHERE g.id=ANY($1) ORDER BY g.id FOR UPDATE OF g",
     )
     .bind(&input.gpu_ids)
-    .fetch_one(&mut *transaction)
+    .fetch_all(&mut *transaction)
     .await?;
-    if available != input.gpu_ids.len() as i64 {
+    if resources.len() != input.gpu_ids.len()
+        || resources.iter().any(|row| {
+            row.get::<bool, _>("maintenance")
+                || row.get::<bool, _>("missing")
+                || !row.get::<bool, _>("enabled")
+        })
+    {
         return Err(ApiError(
             StatusCode::UNPROCESSABLE_ENTITY,
             "包含不可预约的 GPU".into(),
+        ));
+    }
+    let conflicts = sqlx::query(
+        "SELECT g.display_index,n.name AS node_name,u.display_name,r.project_name,lower(a.slot) AS starts_at,upper(a.slot) AS ends_at FROM reservation_allocations a JOIN reservations r ON r.id=a.reservation_id JOIN gpus g ON g.id=a.gpu_id JOIN nodes n ON n.id=g.node_id JOIN users u ON u.id=r.owner_id WHERE a.gpu_id=ANY($1) AND a.slot && tstzrange($2,$3,'[)') ORDER BY g.id,lower(a.slot)"
+    ).bind(&input.gpu_ids).bind(input.starts_at).bind(input.ends_at).fetch_all(&mut *transaction).await?;
+    if !conflicts.is_empty() {
+        let details = conflicts
+            .iter()
+            .map(|row| {
+                format!(
+                    "{} · GPU {} 与 {} 的“{}”冲突：{} — {}",
+                    row.get::<String, _>("node_name"),
+                    row.get::<i32, _>("display_index"),
+                    row.get::<String, _>("display_name"),
+                    row.get::<String, _>("project_name"),
+                    row.get::<DateTime<Utc>, _>("starts_at"),
+                    row.get::<DateTime<Utc>, _>("ends_at")
+                )
+            })
+            .collect::<Vec<_>>();
+        return Err(ApiError(StatusCode::CONFLICT, details.join("\n")));
+    }
+    if peak > user.concurrent_gpu_limit as i64 {
+        return Err(ApiError(
+            StatusCode::CONFLICT,
+            format!(
+                "并发预约将达到 {peak} 张 GPU，超过你的 {} 张上限",
+                user.concurrent_gpu_limit
+            ),
         ));
     }
     let id = Uuid::new_v4();
@@ -287,7 +322,7 @@ async fn create_reservation(
             }) {
                 return Err(ApiError(
                     StatusCode::CONFLICT,
-                    "所选 GPU 在该时段已被预约".into(),
+                    "所选 GPU 的预约状态已变化，请刷新后重新选择时段".into(),
                 ));
             }
             return Err(error.into());
@@ -654,6 +689,31 @@ async fn sync_system_users(
     ))
 }
 
+fn peak_allocations(
+    intervals: &[(DateTime<Utc>, DateTime<Utc>)],
+    start: DateTime<Utc>,
+    end: DateTime<Utc>,
+) -> i64 {
+    let mut events = Vec::new();
+    for &(a, b) in intervals {
+        let left = a.max(start);
+        let right = b.min(end);
+        if left < right {
+            events.push((left, 1_i64));
+            events.push((right, -1_i64));
+        }
+    }
+    // End events sort before start events: adjacent reservations do not overlap.
+    events.sort_unstable();
+    let mut current = 0;
+    let mut peak = 0;
+    for (_, delta) in events {
+        current += delta;
+        peak = peak.max(current);
+    }
+    peak
+}
+
 fn validate_reservation(input: &CreateReservation, limit: i32) -> Result<(), ApiError> {
     if input.gpu_ids.is_empty() || input.gpu_ids.len() > limit as usize {
         return Err(ApiError(
@@ -742,6 +802,25 @@ fn bearer(headers: &HeaderMap) -> Option<&str> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn counts_peak_not_union_and_allows_touching_boundaries() {
+        let start = Utc::now();
+        let middle = start + Duration::hours(1);
+        let end = middle + Duration::hours(1);
+        assert_eq!(
+            peak_allocations(&[(start, middle), (middle, end)], start, end),
+            1
+        );
+        assert_eq!(
+            peak_allocations(&[(start, end), (middle, end)], start, end),
+            2
+        );
+        assert_eq!(
+            peak_allocations(&[(end, end + Duration::hours(1))], start, end),
+            0
+        );
+    }
 
     fn reservation(duration: Duration) -> CreateReservation {
         let starts_at = Utc::now() + Duration::hours(1);

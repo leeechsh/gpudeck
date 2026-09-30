@@ -9,11 +9,15 @@ export type AdminUser = { id: string; username: string; displayName: string; lin
 
 let csrf = ''
 
+export class HubApiError extends Error {
+  constructor(message: string, public status: number) { super(message); this.name = 'HubApiError' }
+}
+
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const response = await fetch(`/api/v1${path}`, { credentials: 'include', ...init, headers: { 'Content-Type': 'application/json', ...(csrf ? { 'X-CSRF-Token': csrf } : {}), ...init.headers } })
   if (!response.ok) {
     const body = await response.json().catch(() => ({}))
-    throw new Error(body.error ?? `请求失败 (${response.status})`)
+    throw new HubApiError(body.error ?? `请求失败 (${response.status})`, response.status)
   }
   if (response.status === 204) return undefined as T
   return response.json()

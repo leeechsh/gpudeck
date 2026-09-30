@@ -2,17 +2,46 @@
 import { act } from 'react'
 import { createRoot } from 'react-dom/client'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { HubProvider } from './HubFeatures'
-import { hubApi, type Reservation, type User } from './api'
-import { ReservationTimeline, reservationPosition } from './ReservationTimeline'
+import { HubProvider, HubReservationSheet } from './HubFeatures'
+import { HubApiError, hubApi, type Reservation, type User } from './api'
+import { ReservationTimeline, dateInput, reservationPosition } from './ReservationTimeline'
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
-vi.mock('./api', () => ({hubApi: { resources: vi.fn(), reservations: vi.fn(), action: vi.fn(), createReservation: vi.fn() }}))
+vi.mock('./api', async () => ({...await vi.importActual('./api'),hubApi: { resources: vi.fn(), reservations: vi.fn(), action: vi.fn(), createReservation: vi.fn() }}))
 afterEach(() => vi.clearAllMocks())
-const user = {id:'alice',username:'alice',linuxUsername:'alice',displayName:'Alice',role:'member'} as User
+const user = {id:'alice',username:'alice',linuxUsername:'alice',displayName:'Alice',role:'member',concurrentGpuLimit:2} as User
 const today = new Date(); today.setHours(0,0,0,0)
 const booking = {id:'booking',ownerId:'bob',ownerName:'Bob',projectName:'Train',purpose:'Training',gpuIds:['g0','g1'],startsAt:new Date(today.getTime()+3600000).toISOString(),endsAt:new Date(today.getTime()+7200000).toISOString(),status:'scheduled'} as Reservation
 describe('reservation timeline', () => {
+  it('does not retry creation when only the post-success refresh fails', async () => {
+    const startsAt=dateInput(new Date(Date.now()+3600000)),endsAt=dateInput(new Date(Date.now()+7200000))
+    vi.mocked(hubApi.resources).mockResolvedValueOnce({serverTime:new Date().toISOString(),nodes:[{id:'node',name:'Lab',hostname:'lab',lastSeenAt:new Date().toISOString(),gpus:[{id:'g0',uuid:'uuid0',index:0,name:'L40S',memoryTotalMb:46080,processes:[],maintenance:false,missing:false}]}]}).mockRejectedValueOnce(new Error('Refresh failed'))
+    vi.mocked(hubApi.reservations).mockResolvedValue([])
+    vi.mocked(hubApi.createReservation).mockResolvedValueOnce({id:'created'})
+    const host=document.createElement('div');const root=createRoot(host);const close=vi.fn()
+    try {
+      await act(async()=>root.render(<HubProvider user={user} onLogout={()=>{}}><HubReservationSheet initial={{gpuIds:['g0'],startsAt,endsAt}} onClose={close}/></HubProvider>))
+      await act(async()=>host.querySelector('form')!.dispatchEvent(new Event('submit',{bubbles:true,cancelable:true})))
+      expect(hubApi.createReservation).toHaveBeenCalledOnce();expect(close).toHaveBeenCalledOnce()
+      expect(host.querySelector('.reservation-submit-error')).toBeNull()
+    } finally {await act(async()=>root.unmount())}
+  })
+  it('refreshes after a server race conflict and retains the form with detailed blocking feedback', async () => {
+    const startsAt=dateInput(new Date(Date.now()+3600000)),endsAt=dateInput(new Date(Date.now()+7200000))
+    const resources={serverTime:new Date().toISOString(),nodes:[{id:'node',name:'Lab',hostname:'lab',lastSeenAt:new Date().toISOString(),gpus:[{id:'g0',uuid:'uuid0',index:0,name:'L40S',memoryTotalMb:46080,processes:[],maintenance:false,missing:false}]}]}
+    vi.mocked(hubApi.resources).mockResolvedValue(resources)
+    vi.mocked(hubApi.reservations).mockResolvedValueOnce([]).mockResolvedValue([{...booking,startsAt:new Date(startsAt).toISOString(),endsAt:new Date(endsAt).toISOString()}])
+    vi.mocked(hubApi.createReservation).mockRejectedValueOnce(new HubApiError('GPU 0 已被预约',409))
+    const host=document.createElement('div');const root=createRoot(host)
+    try {
+      await act(async()=>root.render(<HubProvider user={user} onLogout={()=>{}}><HubReservationSheet initial={{gpuIds:['g0'],startsAt,endsAt}} onClose={()=>{throw new Error('must stay open')}}/></HubProvider>))
+      await act(async()=>host.querySelector('form')!.dispatchEvent(new Event('submit',{bubbles:true,cancelable:true})))
+      expect(hubApi.createReservation).toHaveBeenCalledOnce()
+      expect(host.textContent).toContain('预约状态已刷新')
+      expect(host.textContent).toContain('Lab · GPU 0 与 Bob')
+      expect((host.querySelector('button[type="submit"],.sheet__footer .button--primary') as HTMLButtonElement).disabled).toBe(true)
+    } finally {await act(async()=>root.unmount())}
+  })
   it('clips crossing bookings and excludes non-overlapping or invalid ranges', () => {
     expect(reservationPosition({...booking,startsAt:new Date(0).toISOString(),endsAt:new Date(200).toISOString()},100,300)).toEqual({left:0,width:50})
     expect(reservationPosition({...booking,startsAt:new Date(200).toISOString(),endsAt:new Date(400).toISOString()},100,300)).toEqual({left:50,width:50})

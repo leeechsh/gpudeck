@@ -1,7 +1,8 @@
 import { createContext, FormEvent, ReactNode, useCallback, useContext, useEffect, useMemo, useState } from 'react'
 import { CalendarDays, Check, Clock3, Copy, Download, LogOut, Plus, RefreshCw, Server, ShieldCheck, UserRound, X } from 'lucide-react'
-import { AdminNode, AdminUser, hubApi, Node, NodeRegistration, Reservation, User } from './api'
+import { AdminNode, AdminUser, HubApiError, hubApi, Node, NodeRegistration, Reservation, User } from './api'
 import { ReservationTimeline, type ReservationSeed } from './ReservationTimeline'
+import { reservationChecks } from './reservationChecks'
 
 type HubState = {
   user: User
@@ -53,15 +54,47 @@ const localDate = (hours: number) => { const d = new Date(Date.now() + hours * 3
 
 export function HubReservationSheet({ onClose, initial }: { onClose: () => void; initial?: ReservationSeed }) {
   const hub = useHub()!
-  const [selected, setSelected] = useState<string[]>(initial?.gpuIds ?? []), [error, setError] = useState(''), [busy, setBusy] = useState(false)
+  const [selected, setSelected] = useState<string[]>(initial?.gpuIds ?? [])
+  const [startsAt, setStartsAt] = useState(initial?.startsAt ?? localDate(1))
+  const [endsAt, setEndsAt] = useState(initial?.endsAt ?? localDate(5))
+  const [error, setError] = useState(''), [busy, setBusy] = useState(false)
   const gpus = hub.nodes.flatMap(node => node.gpus.map(gpu => ({ ...gpu, nodeName: node.name })))
+  const checks = reservationChecks(selected, startsAt, endsAt, hub.reservations, hub.nodes, hub.user)
   const submit = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault(); if (!selected.length) { setError('请至少选择一张 GPU'); return }
-    const form = new FormData(event.currentTarget); setBusy(true); setError('')
-    try { await hubApi.createReservation({ gpuIds: selected, startsAt: new Date(String(form.get('startsAt'))).toISOString(), endsAt: new Date(String(form.get('endsAt'))).toISOString(), projectName: form.get('projectName'), purpose: form.get('purpose') }); await hub.refresh(); onClose() }
-    catch (cause) { setError(cause instanceof Error ? cause.message : '预约失败') } finally { setBusy(false) }
+    event.preventDefault()
+    const current = reservationChecks(selected, startsAt, endsAt, hub.reservations, hub.nodes, hub.user)
+    if (current.errors.length) {setError(current.errors.join('\n'));return}
+    const form = new FormData(event.currentTarget);setBusy(true);setError('')
+    try {
+      await hubApi.createReservation({gpuIds:selected,startsAt:new Date(startsAt).toISOString(),endsAt:new Date(endsAt).toISOString(),projectName:form.get('projectName'),purpose:form.get('purpose')})
+    } catch(cause) {
+      if (cause instanceof HubApiError && cause.status === 409) {
+        try {await hub.refresh();setError(cause.message + '\n预约状态已刷新，请调整 GPU 或时间后重试。')}
+        catch {setError(cause.message + '\n最新状态刷新失败，请手动刷新后重试。')}
+      } else setError(cause instanceof Error ? cause.message : '预约失败')
+      setBusy(false);return
+    }
+    // A refresh failure must not turn a successful creation into a retry.
+    try {await hub.refresh()} catch { /* The normal polling loop will retry. */ }
+    setBusy(false);onClose()
   }
-  return <div className="scrim" onMouseDown={event => event.target === event.currentTarget && onClose()}><form className="sheet reservation-sheet hub-create-sheet" onSubmit={submit}><header className="sheet__header"><div><p className="eyebrow">协作式预约</p><h2>预约 GPU</h2></div><button type="button" className="icon-button" onClick={onClose} aria-label="关闭"><X size={17}/></button></header><div className="reservation-body"><div className="reservation-condition"><span><CalendarDays size={16}/></span><div><strong>提交后自动确认</strong><small>同一 GPU 的时间区间不可重叠；每次最长 48 小时。</small></div></div><label>项目名称<input name="projectName" required maxLength={120} placeholder="例如：RadarDreamer 训练"/></label><div className="hub-form-grid"><label>开始时间<input name="startsAt" type="datetime-local" defaultValue={initial?.startsAt ?? localDate(1)} required/></label><label>结束时间<input name="endsAt" type="datetime-local" defaultValue={initial?.endsAt ?? localDate(5)} required/></label></div><fieldset><legend>选择 GPU</legend><div className="hub-gpu-picker">{gpus.map(gpu => <button type="button" disabled={gpu.maintenance || gpu.missing} className={selected.includes(gpu.id) ? 'is-selected' : ''} key={gpu.id} onClick={() => setSelected(current => current.includes(gpu.id) ? current.filter(id => id !== gpu.id) : [...current, gpu.id])}><span>{selected.includes(gpu.id) && <Check size={13}/>}</span><div><strong>{gpu.nodeName} · GPU {gpu.index}</strong><small>{gpu.name}</small></div></button>)}</div></fieldset><label>用途说明<textarea name="purpose" required maxLength={500} placeholder="训练任务、预计资源需求等"/></label>{error && <div className="hub-form-error">{error}</div>}</div><footer className="sheet__footer"><button type="button" className="button button--secondary" onClick={onClose}>取消</button><button className="button button--primary" disabled={busy}>{busy ? '提交中…' : `确认预约${selected.length ? `（${selected.length} 张）` : ''}`}</button></footer></form></div>
+  return <div className="scrim" onMouseDown={event => !busy && event.target === event.currentTarget && onClose()}><form className="sheet reservation-sheet hub-create-sheet" role="dialog" aria-modal="true" aria-label="预约 GPU" aria-busy={busy} onSubmit={submit}>
+    <header className="sheet__header"><div><p className="eyebrow">协作式预约</p><h2>预约 GPU</h2></div><button type="button" className="icon-button" disabled={busy} onClick={onClose} aria-label="关闭"><X size={17}/></button></header>
+    <div className="reservation-body">
+      <div className="reservation-condition"><span><CalendarDays size={16}/></span><div><strong>提交后自动确认</strong><small>时间边界相接不算冲突；每次最长 48 小时，未来 14 天内开始。</small></div></div>
+      <label>项目名称<input name="projectName" required maxLength={120} placeholder="例如：RadarDreamer 训练" disabled={busy}/></label>
+      <div className="hub-form-grid"><label>开始时间<input name="startsAt" type="datetime-local" value={startsAt} onChange={event => {setStartsAt(event.target.value);setError('')}} required disabled={busy}/></label><label>结束时间<input name="endsAt" type="datetime-local" value={endsAt} onChange={event => {setEndsAt(event.target.value);setError('')}} required disabled={busy}/></label></div>
+      <fieldset><legend>选择 GPU</legend><div className="hub-gpu-picker">{gpus.map(gpu => {
+        const conflicts = reservationChecks([gpu.id], startsAt, endsAt, hub.reservations, hub.nodes, {...hub.user,concurrentGpuLimit:14}).errors.filter(message => message.includes('冲突'))
+        return <button type="button" disabled={busy || gpu.maintenance || gpu.missing} aria-pressed={selected.includes(gpu.id)} className={`${selected.includes(gpu.id) ? 'is-selected' : ''} ${conflicts.length ? 'has-conflict' : ''}`} key={gpu.id} onClick={() => {setSelected(current => current.includes(gpu.id) ? current.filter(id => id !== gpu.id) : [...current,gpu.id]);setError('')}}><span>{selected.includes(gpu.id) && <Check size={13}/>}</span><div><strong>{gpu.nodeName} · GPU {gpu.index}</strong><small>{gpu.name}{conflicts.length ? ' · 时段冲突' : ''}</small></div></button>
+      })}</div></fieldset>
+      {checks.errors.length > 0 && <div className="hub-form-error" role="alert"><strong>请调整预约</strong><ul>{checks.errors.map(message => <li key={message}>{message}</li>)}</ul></div>}
+      {checks.warnings.length > 0 && <div className="reservation-warning" role="status"><ul>{checks.warnings.map(message => <li key={message}>{message}</li>)}</ul></div>}
+      <label>用途说明<textarea name="purpose" required maxLength={500} placeholder="训练任务、预计资源需求等" disabled={busy}/></label>
+      {error && <div className="hub-form-error reservation-submit-error" role="alert">{error}</div>}
+    </div>
+    <footer className="sheet__footer"><button type="button" className="button button--secondary" disabled={busy} onClick={onClose}>取消</button><button className="button button--primary" disabled={busy || checks.errors.length > 0}>{busy ? '提交中…' : `确认预约${selected.length ? `（${selected.length} 张）` : ''}`}</button></footer>
+  </form></div>
 }
 
 export function HubAdminPage({ onRegister }: { onRegister: () => void }) {
