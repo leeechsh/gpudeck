@@ -1,67 +1,35 @@
-import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react'
-import { Activity, ArrowDownUp, BarChart3, CalendarDays, Check, ChevronRight, Clock3, Gauge, GripVertical, HardDrive, LayoutDashboard, LogOut, Plus, RefreshCw, Search, Server as ServerIcon, ShieldCheck, Users, WifiOff, X, Zap } from 'lucide-react'
-import { Gpu, hubApi, Node, Reservation, User } from './api'
+import { useEffect, useState } from 'react'
+import { Activity } from 'lucide-react'
+import App from '../App'
+import { hubApi, User } from './api'
 import './hub.css'
 
-type View = 'dashboard' | 'calendar' | 'statistics'
-type StatsRow = { username: string; gpuHours: number; coverageSeconds: number }
-const fmt = (v: string) => new Intl.DateTimeFormat('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }).format(new Date(v))
-const inputDate = (hours: number) => { const d = new Date(Date.now() + hours * 3600000); d.setMinutes(Math.ceil(d.getMinutes() / 30) * 30, 0, 0); return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16) }
-const statusText: Record<string, string> = { scheduled: '待开始', active: '进行中', completed: '已结束', cancelled: '已取消', overrun: '超时占用' }
-const isOnline = (n: Node) => Boolean(n.lastSeenAt && Date.now() - new Date(n.lastSeenAt).getTime() < 30000)
-const memPct = (g: Gpu) => g.memoryTotalMb ? Math.round((g.memoryUsedMb ?? 0) / g.memoryTotalMb * 100) : 0
-
 export default function HubApp() {
-  const [user, setUser] = useState<User | null>(null), [loginError, setLoginError] = useState('')
-  const [view, setView] = useState<View>('dashboard'), [nodes, setNodes] = useState<Node[]>([])
-  const [reservations, setReservations] = useState<Reservation[]>([]), [stats, setStats] = useState<StatsRow[]>([])
-  const [loading, setLoading] = useState(true), [error, setError] = useState(''), [showCreate, setShowCreate] = useState(false)
-  const [lastUpdated, setLastUpdated] = useState<Date>(), [search, setSearch] = useState('')
-  const load = useCallback(async () => { try { const [r, b, s] = await Promise.all([hubApi.resources(), hubApi.reservations(), hubApi.statistics()]); setNodes(r.nodes); setReservations(b); setStats(s.users); setLastUpdated(new Date()); setError('') } catch (e) { setError(e instanceof Error ? e.message : '无法加载数据') } finally { setLoading(false) } }, [])
-  useEffect(() => { hubApi.me().then(setUser).then(load).catch(() => setLoading(false)) }, [load])
-  useEffect(() => { if (!user) return; const id = window.setInterval(load, 5000); return () => window.clearInterval(id) }, [user, load])
-  if (!user) return <Login error={loginError} onLogin={async (name, password) => { try { setLoginError(''); await hubApi.login(name, password); setUser(await hubApi.me()); await load() } catch (e) { setLoginError(e instanceof Error ? e.message : '登录失败') } }}/>
+  const [user, setUser] = useState<User | null>(null)
+  const [error, setError] = useState('')
+  const [loading, setLoading] = useState(true)
 
-  const gpus = nodes.flatMap(n => n.gpus), online = nodes.filter(isOnline).length
-  const filtered = nodes.filter(n => `${n.name} ${n.hostname}`.toLowerCase().includes(search.toLowerCase()))
-  const active = reservations.filter(r => r.status === 'active' || r.status === 'overrun').length
-  const titles: Record<View, string> = { dashboard: '算力总览', calendar: '预约日历', statistics: '使用统计' }
-  return <div className="app-shell hub-app-shell">
-    <aside className="sidebar hub-sidebar">
-      <div className="sidebar__titlebar"><div className="brand-row"><button className="brand" onClick={() => setView('dashboard')}><span className="brand__mark"><Activity size={20}/></span><div><strong>RackTop</strong><small>GPU 协作预约</small></div></button></div></div>
-      <nav className="primary-nav">
-        <Nav active={view === 'dashboard'} icon={<LayoutDashboard/>} label="总览" count={gpus.length} onClick={() => setView('dashboard')}/>
-        <Nav active={view === 'calendar'} icon={<CalendarDays/>} label="预约日历" count={reservations.filter(r => ['scheduled','active','overrun'].includes(r.status)).length} onClick={() => setView('calendar')}/>
-        <Nav active={view === 'statistics'} icon={<BarChart3/>} label="使用统计" onClick={() => setView('statistics')}/>
-      </nav>
-      <div className="sidebar__section-header"><span>服务器</span><span>{online}/{nodes.length}</span></div>
-      <label className="search-field"><Search size={14}/><input value={search} onChange={e => setSearch(e.target.value)} placeholder="搜索"/>{search && <button onClick={() => setSearch('')}><X size={13}/></button>}</label>
-      <div className="server-list">{filtered.map(n => { const busy = n.gpus.filter(g => g.processes.length).length, load = n.gpus.length ? Math.round(n.gpus.reduce((s,g) => s + (g.utilizationPercent ?? 0), 0) / n.gpus.length) : 0; return <button className="server-row" key={n.id} onClick={() => setView('dashboard')}><span className="server-row__drag"><GripVertical size={13}/></span><span className={`server-row__status server-row__status--${isOnline(n) ? 'online' : 'offline'}`}/><span className="server-row__content"><span className="server-row__title">{n.name}</span><span className="server-row__meta">{n.gpus.length} GPU · {busy} 占用 · {load}%</span></span><ChevronRight className="server-row__chevron" size={14}/></button> })}</div>
-      <div className="hub-collaboration-note"><ShieldCheck size={16}/><span><strong>协作式管理</strong><small>仅监控、预约与通知，不终止用户进程</small></span></div>
-      <div className="sidebar__footer"><button className="hub-user" onClick={async () => { await hubApi.logout(); setUser(null) }}><span className="hub-avatar">{user.displayName.slice(0,1)}</span><span><strong>{user.displayName}</strong><small>{user.linuxUsername} · {user.role}</small></span><LogOut size={14}/></button></div>
-    </aside>
-    <main className="workspace">
-      <header className="topbar"><div className="topbar__title"><p className="eyebrow">{online} / {nodes.length} 台在线</p><h1>{titles[view]}</h1></div><div className="topbar__actions"><span className="refresh-label"><Clock3 size={14}/>{lastUpdated ? lastUpdated.toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit'}) : '同步中'}</span><button className="button button--secondary" onClick={load}><RefreshCw size={15}/>刷新全部</button><button className="button button--primary" onClick={() => setShowCreate(true)}><Plus size={15}/>预约 GPU</button></div></header>
-      <div className="workspace__scroll">{error && <div className="hub-alert">{error}</div>}{loading ? <div className="fleet-loading"><RefreshCw className="hub-spin" size={16}/>正在同步服务器状态…</div> : view === 'dashboard' ? <Dashboard nodes={filtered} allNodes={nodes} reservations={reservations} active={active}/> : view === 'calendar' ? <Calendar nodes={nodes} reservations={reservations}/> : <Statistics rows={stats}/>}</div>
-    </main>
-    {showCreate && <CreateModal nodes={nodes} onClose={() => setShowCreate(false)} onCreated={async () => { setShowCreate(false); await load() }}/>} 
-  </div>
+  useEffect(() => { hubApi.me().then(setUser).catch(() => undefined).finally(() => setLoading(false)) }, [])
+
+  if (loading) return <div className="hub-gate"><span className="brand__mark"><Activity size={22}/></span><p>正在连接 RackTop Hub…</p></div>
+  if (user) return <App />
+
+  return <div className="hub-gate"><form className="panel hub-login" onSubmit={async event => {
+    event.preventDefault()
+    const form = new FormData(event.currentTarget)
+    setLoading(true); setError('')
+    try {
+      await hubApi.login(String(form.get('username')), String(form.get('password')))
+      setUser(await hubApi.me())
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : '登录失败')
+    } finally { setLoading(false) }
+  }}>
+    <span className="brand__mark hub-login__mark"><Activity size={24}/></span>
+    <h1>RackTop</h1><p>算力监控</p>
+    <label>用户名<input name="username" autoComplete="username" required autoFocus/></label>
+    <label>密码<input name="password" type="password" autoComplete="current-password" required/></label>
+    {error && <div className="hub-login__error">{error}</div>}
+    <button className="button button--primary" disabled={loading}>{loading ? '登录中…' : '登录'}</button>
+  </form></div>
 }
-
-function Login({ onLogin, error }: { onLogin:(n:string,p:string)=>Promise<void>; error:string }) { const [busy,setBusy]=useState(false); return <div className="hub-login"><form className="panel hub-login__card" onSubmit={async e => { e.preventDefault(); setBusy(true); const d=new FormData(e.currentTarget); await onLogin(String(d.get('username')),String(d.get('password'))); setBusy(false) }}><span className="brand__mark hub-login__mark"><Activity size={25}/></span><h1>RackTop Hub</h1><p>实验室 GPU 资源协作平台</p><label>用户名<input name="username" autoComplete="username" required autoFocus/></label><label>密码<input name="password" type="password" autoComplete="current-password" required/></label>{error&&<div className="form-error">{error}</div>}<button className="button button--primary hub-login__submit" disabled={busy}>{busy?'登录中…':'登录'}</button><small>使用管理员分配的门户账号登录</small></form></div> }
-function Nav({active,icon,label,count,onClick}:{active:boolean;icon:React.ReactNode;label:string;count?:number;onClick:()=>void}) { return <button className={active?'is-active':''} onClick={onClick}>{icon}<span>{label}</span>{count!==undefined&&<span className="nav-count">{count}</span>}</button> }
-
-function Dashboard({nodes,allNodes,reservations,active}:{nodes:Node[];allNodes:Node[];reservations:Reservation[];active:number}) {
-  const g=allNodes.flatMap(n=>n.gpus), busy=g.filter(x=>x.processes.length).length, online=allNodes.filter(isOnline).length
-  const util=g.length?Math.round(g.reduce((s,x)=>s+(x.utilizationPercent??0),0)/g.length):0, mem=g.length?Math.round(g.reduce((s,x)=>s+memPct(x),0)/g.length):0
-  return <div className="detail-page fleet-page hub-dashboard"><div className="fleet-toolbar"><section className="fleet-summary"><Summary icon={<ServerIcon/>} value={online} label="在线服务器"/><Summary icon={<WifiOff/>} value={allNodes.length-online} label="离线服务器"/><Summary icon={<Gauge/>} value={g.length} label="加速卡总数"/><Summary icon={<Activity/>} value={`${util}%`} label="平均加速卡"/><Summary icon={<HardDrive/>} value={`${mem}%`} label="平均显存"/><Summary icon={<Zap/>} value={g.length-busy} label="空闲加速卡"/><Summary icon={<Users/>} value={busy} label="占用加速卡"/><Summary icon={<CalendarDays/>} value={active} label="当前预约"/></section><div className="sort-controls"><ArrowDownUp size={14}/><label><span>排序</span><select defaultValue="name"><option value="name">服务器名称</option></select></label><button className="button button--secondary button--small">升序</button></div></div>{nodes.length?<div className="fleet-grid">{nodes.map(n=><NodeCard key={n.id} node={n}/>)}</div>:<div className="panel hub-empty">没有匹配的服务器</div>}<ReservationStrip reservations={reservations}/></div>
-}
-function Summary({icon,value,label}:{icon:React.ReactNode;value:string|number;label:string}) { return <span>{icon}<strong>{value}</strong><small>{label}</small></span> }
-function NodeCard({node}:{node:Node}) { const online=isOnline(node), load=node.gpus.length?Math.round(node.gpus.reduce((s,g)=>s+(g.utilizationPercent??0),0)/node.gpus.length):0, idle=node.gpus.filter(g=>!g.processes.length&&!g.maintenance&&!g.missing).length; return <article className="panel fleet-card hub-fleet-card"><div className="fleet-card__header"><span className={`server-row__status server-row__status--${online?'online':'offline'}`}/><span><strong>{node.name}</strong><small>{node.hostname}</small></span><span className={`status-pill status-pill--${online?'online':'offline'}`}><i className="status-pill__dot"/>{online?'在线':'离线'}</span><ChevronRight size={15}/></div><div className="fleet-system"><button><span>GPU</span><strong>{load}%</strong><i><b style={{width:`${load}%`}}/></i></button></div><div className="fleet-gpus"><div className="fleet-gpus__labels"><span>设备</span><span>显存</span><span>GPU</span></div>{node.gpus.map(g=><GpuRow key={g.id} gpu={g}/>)}</div><footer className="fleet-card__footer"><span>{idle} 张 GPU 空闲</span><span>{node.lastSeenAt?`更新于 ${new Date(node.lastSeenAt).toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit',second:'2-digit'})}`:'尚未上报'}</span></footer></article> }
-function GpuRow({gpu}:{gpu:Gpu}) { const mem=memPct(gpu), util=Math.round(gpu.utilizationPercent??0), owner=[...new Set(gpu.processes.map(p=>p.username))].join(', '), level=util>=95?'critical':util>=70?'high':gpu.processes.length?'active':'idle'; return <div className={`fleet-gpu-row fleet-gpu-row--${gpu.maintenance||gpu.missing?'unavailable':level}`} style={{'--memory-fill':`${mem}%`} as React.CSSProperties} title={owner?`${owner} · ${gpu.processes.length} 个进程`:gpu.uuid}><span><strong>GPU {gpu.index}</strong><small>{gpu.name}{owner?` · ${owner}`:''}</small></span><span>{mem}%<small>{((gpu.memoryUsedMb??0)/1024).toFixed(1)}G</small></span><span className={util?`fleet-gpu-row__load--${level}`:''}>{util}%</span></div> }
-function ReservationStrip({reservations}:{reservations:Reservation[]}) { const rows=reservations.filter(r=>['scheduled','active','overrun'].includes(r.status)).slice(0,4); if(!rows.length)return null; return <section className="panel hub-reservations"><header><div><strong>近期预约</strong><small>进行中与即将开始</small></div><CalendarDays size={16}/></header><div>{rows.map(r=><div className="hub-booking" key={r.id}><i className={`hub-booking__status hub-booking__status--${r.status}`}/><span><strong>{r.projectName}</strong><small>{r.ownerName} · {r.gpuIds.length} 张 GPU</small></span><span><b>{statusText[r.status]??r.status}</b><small>{fmt(r.startsAt)} — {fmt(r.endsAt)}</small></span></div>)}</div></section> }
-
-function Calendar({nodes,reservations}:{nodes:Node[];reservations:Reservation[]}) { const gpus=nodes.flatMap(n=>n.gpus.map(g=>({...g,nodeName:n.name}))); return <div className="detail-page hub-section-page"><header className="hub-section-heading"><div><h2>未来预约</h2><p>以具体 GPU 为单位，冲突由服务端原子校验</p></div><span className="status-pill status-pill--online"><i className="status-pill__dot"/>自动确认</span></header><div className="panel hub-calendar"><div className="hub-calendar__row hub-calendar__head"><span>资源</span><span>当前状态</span><span>预约区间</span></div>{gpus.map(g=>{const related=reservations.filter(r=>r.gpuIds.includes(g.id)&&['scheduled','active','overrun'].includes(r.status));return <div className="hub-calendar__row" key={g.id}><span><strong>{g.nodeName} · GPU {g.index}</strong><small>{g.name}</small></span><span><i className={`hub-dot hub-dot--${g.processes.length?'busy':'free'}`}/>{g.processes.length?'使用中':'空闲'}</span><span>{related.length?related.map(r=><span className="hub-slot" key={r.id}><b>{r.ownerName}</b>{fmt(r.startsAt)} → {fmt(r.endsAt)}</span>):<em>暂无预约</em>}</span></div>})}</div></div> }
-function Statistics({rows}:{rows:StatsRow[]}) { const max=Math.max(...rows.map(r=>r.gpuHours),1); return <div className="detail-page hub-section-page"><header className="hub-section-heading"><div><h2>近 90 天 GPU 使用量</h2><p>按 Agent 采样汇总；数据覆盖率低时需谨慎解释</p></div></header><div className="panel hub-stats">{rows.length?rows.map((r,i)=><div className="hub-stats__row" key={r.username}><span className="hub-rank">{i+1}</span><strong>{r.username}</strong><i><b style={{width:`${r.gpuHours/max*100}%`}}/></i><span>{r.gpuHours.toFixed(1)} h</span><small>覆盖 {(r.coverageSeconds/3600).toFixed(1)} h</small></div>):<div className="hub-empty">尚无统计数据</div>}</div></div> }
-
-function CreateModal({nodes,onClose,onCreated}:{nodes:Node[];onClose:()=>void;onCreated:()=>Promise<void>}) { const [selected,setSelected]=useState<string[]>([]),[error,setError]=useState(''),[busy,setBusy]=useState(false); const gpus=useMemo(()=>nodes.flatMap(n=>n.gpus.map(g=>({...g,nodeName:n.name}))),[nodes]); return <div className="scrim" onMouseDown={e=>{if(e.target===e.currentTarget)onClose()}}><form className="sheet hub-reservation-sheet" onSubmit={async(e:FormEvent<HTMLFormElement>)=>{e.preventDefault();if(!selected.length){setError('请至少选择一张 GPU');return}const f=new FormData(e.currentTarget);setBusy(true);try{await hubApi.createReservation({gpuIds:selected,startsAt:new Date(String(f.get('startsAt'))).toISOString(),endsAt:new Date(String(f.get('endsAt'))).toISOString(),projectName:f.get('projectName'),purpose:f.get('purpose')});await onCreated()}catch(x){setError(x instanceof Error?x.message:'预约失败')}finally{setBusy(false)}}}><header className="sheet__header"><div><h2>预约 GPU</h2><p>提交后自动确认，最长 48 小时</p></div><button type="button" className="icon-button" onClick={onClose}><X size={17}/></button></header><div className="hub-reservation-sheet__body"><label>项目名称<input name="projectName" required maxLength={120} placeholder="例如：RadarDreamer 训练"/></label><div className="hub-form-grid"><label>开始时间<input name="startsAt" type="datetime-local" defaultValue={inputDate(1)} required/></label><label>结束时间<input name="endsAt" type="datetime-local" defaultValue={inputDate(5)} required/></label></div><fieldset><legend>选择 GPU</legend><div className="hub-gpu-picker">{gpus.map(g=><button type="button" disabled={g.maintenance||g.missing} className={selected.includes(g.id)?'is-selected':''} key={g.id} onClick={()=>setSelected(s=>s.includes(g.id)?s.filter(id=>id!==g.id):[...s,g.id])}><span>{selected.includes(g.id)&&<Check size={13}/>}</span><div><strong>{g.nodeName} · GPU {g.index}</strong><small>{g.name}</small></div></button>)}</div></fieldset><label>用途说明<textarea name="purpose" required maxLength={500} placeholder="训练任务、预计资源需求等"/></label>{error&&<div className="form-error">{error}</div>}</div><footer className="sheet__footer"><button type="button" className="button button--secondary" onClick={onClose}>取消</button><button className="button button--primary" disabled={busy}>{busy?'提交中…':`确认预约${selected.length?`（${selected.length} 张）`:''}`}</button></footer></form></div> }

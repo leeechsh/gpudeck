@@ -6,8 +6,11 @@ import { clampPercent, gpuMemoryPercent, hasOtherUserGpuWorkload } from '../util
 import { normalizeIdleFilters } from '../utils/idleFilters'
 import { RACKTOP_MANAGED_IDENTITY_PATH } from '../utils/sshSetup'
 import type { ReleaseInfo } from '../utils/updateCheck'
+import { hubApi } from '../hub/api'
+import type { Node as HubNode } from '../hub/api'
 
 const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window
+const isHubWeb = !isTauri && import.meta.env.MODE !== 'test' && import.meta.env.VITE_RACKTOP_HUB !== 'false'
 
 const now = Math.floor(Date.now() / 1000)
 const demoServers: Server[] = [
@@ -287,14 +290,60 @@ function rollingHistory(snapshot: Snapshot, fromTimestamp?: number): HistoryPoin
   })
 }
 
+let hubFleetRequest: { expiresAt: number; request: Promise<{ servers: Server[]; snapshots: Snapshot[] }> } | null = null
+
+function hubNodeOnline(node: HubNode) {
+  return Boolean(node.lastSeenAt && Date.now() - new Date(node.lastSeenAt).getTime() < 30_000)
+}
+
+async function loadHubFleet(): Promise<{ servers: Server[]; snapshots: Snapshot[] }> {
+  if (hubFleetRequest && hubFleetRequest.expiresAt > Date.now()) return hubFleetRequest.request
+  const request = Promise.all([hubApi.resources(), hubApi.me()]).then(([resourceData, user]) => {
+    const servers: Server[] = resourceData.nodes.map((node, index) => ({
+      id: node.id, name: node.name, location: null, host: node.hostname, port: 22,
+      username: user.linuxUsername, tags: [], samplingIntervalSeconds: 5, historyRetentionDays: 90,
+      remoteHistoryEnabled: false, sortOrder: index, authMethod: 'sshAgent',
+      status: hubNodeOnline(node) ? 'online' : 'offline', lastError: null,
+      lastSeenAt: node.lastSeenAt ? Math.floor(new Date(node.lastSeenAt).getTime() / 1000) : null,
+    }))
+    const snapshots: Snapshot[] = resourceData.nodes.map((node) => ({
+      serverId: node.id, hostname: node.hostname, username: user.linuxUsername,
+      osId: 'linux', osName: 'Linux', timestamp: node.lastSeenAt ? Math.floor(new Date(node.lastSeenAt).getTime() / 1000) : Math.floor(Date.now() / 1000),
+      status: hubNodeOnline(node) ? 'online' : 'offline', acceleratorVendor: 'nvidia',
+      system: { cpuModel: 'Agent telemetry', cpuUtilization: 0, currentUserCpuUtilization: 0, load1: 0, load5: 0, load15: 0, memoryUsedBytes: 0, memoryTotalBytes: 0, swapUsedBytes: 0, swapTotalBytes: 0 },
+      gpus: node.gpus.map((gpu) => ({
+        index: gpu.index, uuid: gpu.uuid, name: gpu.name,
+        utilization: gpu.utilizationPercent ?? 0,
+        memoryUtilization: gpu.memoryTotalMb ? (gpu.memoryUsedMb ?? 0) / gpu.memoryTotalMb * 100 : 0,
+        memoryUsedMb: gpu.memoryUsedMb ?? 0, memoryTotalMb: gpu.memoryTotalMb,
+        temperatureCelsius: gpu.temperatureCelsius ?? 0, powerWatts: 0,
+        healthStatus: gpu.maintenance ? '维护中' : gpu.missing ? '不可用' : '正常',
+      })),
+      processes: node.gpus.flatMap((gpu) => gpu.processes.map((process) => ({
+        gpuUuid: gpu.uuid, gpuIndex: gpu.index, pid: process.pid, parentPid: 0,
+        username: process.username, command: process.command, memoryUsedMb: process.memoryUsedMb,
+        smUtilization: null, cpuPercent: 0, elapsed: '—',
+        isCurrentUser: process.username === user.linuxUsername, isGroupLeader: true,
+      }))),
+      cpuProcesses: [], processesSampled: true, nvidiaSmi: 'available', disks: [],
+    }))
+    return { servers, snapshots }
+  })
+  hubFleetRequest = { expiresAt: Date.now() + 1_000, request }
+  request.catch(() => { hubFleetRequest = null })
+  return request
+}
+
 export const api = {
   isStorageMaintenanceActive: async (): Promise<boolean> => isTauri ? invoke<boolean>('storage_maintenance_active') : new URLSearchParams(window.location.search).get('maintenance') === '1',
   isDesktop: isTauri,
   async listServers(): Promise<Server[]> {
-    return isTauri ? invoke('list_servers') : browserServers
+    if (isTauri) return invoke('list_servers')
+    return isHubWeb ? (await loadHubFleet()).servers : browserServers
   },
   async listLatestSnapshots(): Promise<Snapshot[]> {
     if (isTauri) return invoke('list_latest_snapshots')
+    if (isHubWeb) return (await loadHubFleet()).snapshots
     return browserServers.map((server) => {
       const source = browserSnapshotFor(server.id)
       return { ...source, serverId: server.id }
@@ -370,6 +419,12 @@ export const api = {
   },
   async collectServer(serverId: string, includeProcesses = true, includeDisks = true, recordHistory = true, allowCredentialPrompt = false): Promise<Snapshot> {
     if (isTauri) return invoke('collect_server', { serverId, includeProcesses, includeDisks, recordHistory, allowCredentialPrompt })
+    if (isHubWeb) {
+      hubFleetRequest = null
+      const snapshot = (await loadHubFleet()).snapshots.find((item) => item.serverId === serverId)
+      if (!snapshot) throw new Error('Hub 节点不存在')
+      return snapshot
+    }
     const server = browserServers.find((item) => item.id === serverId)
     const remoteCommand = `RACKTOP_INCLUDE_PROCESSES=${includeProcesses ? 1 : 0} RACKTOP_INCLUDE_DISKS=${includeDisks ? 1 : 0}; export LANG=C LC_ALL=C; printf '__RACKTOP_USER__\\n'; id -un; printf '__RACKTOP_HOST__\\n'; hostname; head -n 1 /proc/stat; grep -E '^(MemTotal|MemAvailable|SwapTotal|SwapFree):' /proc/meminfo; nvidia-smi --query-gpu=index,name,uuid,utilization.gpu,utilization.memory,memory.used,memory.total,temperature.gpu,power.draw --format=csv,noheader,nounits; ps -eo user:64=,uid=,pid=,ppid=,pgid=,pcpu=,pmem=,rss=,etime=,args= --sort=-pcpu`
     const command = `ssh -o BatchMode=yes ${server?.username ?? 'user'}@${server?.host ?? 'host'} '${remoteCommand}'`
