@@ -50,7 +50,7 @@ services:
     restart: unless-stopped
     environment:
       RACKTOP_SITE_ADDRESS: ${RACKTOP_SITE_ADDRESS:-http://:80}
-    ports: ["127.0.0.1:${RACKTOP_HTTP_PORT:-37935}:80"]
+    ports: ["${RACKTOP_BIND_ADDRESS:-127.0.0.1}:${RACKTOP_HTTP_PORT:-37935}:80"]
     volumes:
       - caddy-data:/data
       - caddy-config:/config

@@ -6,7 +6,7 @@ use std::{collections::HashMap, env, fs, process::Command, time::Duration};
 use tracing::{error, info};
 use uuid::Uuid;
 
-#[tokio::main]
+#[tokio::main(flavor = "current_thread")]
 async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt()
         .with_env_filter(

@@ -44,3 +44,5 @@ npm run dev
 ```
 
 Hub Web 默认启用。若要运行原 RackTop 桌面 UI，设置 `VITE_RACKTOP_HUB=false`。
+
+本机部署默认只绑定 `127.0.0.1`。需要通过 Tailscale 接入节点时，将 `.env` 中的 `RACKTOP_BIND_ADDRESS` 和 `RACKTOP_PUBLIC_URL` 分别改为服务器的 Tailscale IP 与完整 URL；不要直接绑定公网地址并继续使用明文 HTTP。
