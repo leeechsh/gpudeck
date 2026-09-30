@@ -1,0 +1,48 @@
+# RackTop Hub — 协作式 GPU 预约
+
+这是基于 RackTop 的无 Slurm 团队版：中央看板、具体 GPU 预约、门户账号、企业微信通知和使用统计。Hub 与 Agent **不会执行、暂停或终止用户进程**；SSH 仍可绕过预约，因此违规使用只会被标记和通知。
+
+## 架构
+
+- Web：React/Vite，统一看板、预约日历、统计。
+- Hub：Rust/Axum + PostgreSQL，事务级冲突校验、Argon2 密码、服务端会话与 CSRF。
+- Agent：Rust 单二进制，每 5 秒只读 `nvidia-smi` 和 `/proc`，以 GPU UUID 上报。
+- 通知：企业微信群机器人；支持预约提醒、未签到、未预约使用和超时占用，均做幂等去重。
+
+## Hub 部署
+
+```bash
+cd deploy
+cp .env.example .env
+mkdir -p secrets
+openssl rand -base64 32 > secrets/postgres_password
+printf 'postgres:5432:racktop:racktop:%s\n' "$(cat secrets/postgres_password)" > secrets/pgpass
+chmod 600 .env secrets/*
+docker compose up -d --build
+```
+
+请先把 `.env` 中域名、初始密码和企业微信 webhook 改为真实值，并保证公网 DNS 指向管理机。Caddy 自动签发 HTTPS 证书。初始管理员只会在数据库没有管理员时创建。
+
+## 节点接入
+
+1. 管理员登录后调用 `POST /api/v1/admin/nodes` 创建节点；响应中的 Agent token 只显示一次。
+2. 构建：`cargo build --release -p racktop-agent`。
+3. 在现有账号 Ansible inventory 中增加 Server3，保持既有 UID/GID/SSH 公钥流程；为每台主机设置独立 `racktop_node_id`、`racktop_agent_token`。
+4. 运行 `deploy/ansible/install-agent.yml`。Agent 用户无需 Docker、sudo 或写 GPU 权限。
+
+## 默认规则
+
+- 每用户同一时间最多 2 张 GPU；管理员创建用户时可调整。
+- 单次最长 48 小时，最多提前 14 天，提交即确认。
+- 未签到不释放；预约到期不续期也不杀进程；未预约使用只通知。
+- 分钟数据保留 90 天，小时汇总保留 1 年。
+
+## 本地开发
+
+```bash
+cargo test --workspace
+npm ci
+npm run dev
+```
+
+Hub Web 默认启用。若要运行原 RackTop 桌面 UI，设置 `VITE_RACKTOP_HUB=false`。

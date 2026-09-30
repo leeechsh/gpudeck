@@ -1,0 +1,55 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: racktop
+      POSTGRES_USER: racktop
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+    secrets: [postgres_password]
+    volumes: [racktop-postgres:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U racktop"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+  hub:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.hub
+    restart: unless-stopped
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      DATABASE_URL: postgres://racktop@postgres/racktop?sslmode=disable
+      PGPASSFILE: /run/secrets/pgpass
+    secrets:
+      - source: pgpass
+        target: pgpass
+        uid: "65532"
+        gid: "65532"
+        mode: 0400
+    depends_on:
+      postgres: { condition: service_healthy }
+  web:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.web
+    restart: unless-stopped
+    environment:
+      RACKTOP_DOMAIN: ${RACKTOP_DOMAIN}
+    ports: ["80:80", "443:443"]
+    volumes:
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on: [hub]
+secrets:
+  postgres_password:
+    file: ./secrets/postgres_password
+  pgpass:
+    file: ./secrets/pgpass
+volumes:
+  racktop-postgres:
+  caddy-data:
+  caddy-config:

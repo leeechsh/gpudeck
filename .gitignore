@@ -1,7 +1,10 @@
 node_modules/
+/target/
 dist/
 src-tauri/target/
 .playwright-cli/
+.agents/
+skills-lock.json
 output/playwright/
 .DS_Store
 *.log

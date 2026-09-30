@@ -1,6 +1,7 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import App from './App'
+import HubApp from './hub/HubApp'
 import { api } from './services/api'
 import { detectAppPlatform } from './utils/platform'
 import './styles.css'
@@ -9,6 +10,6 @@ document.documentElement.dataset.platform = detectAppPlatform(api.isDesktop, nav
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <App />
+    {import.meta.env.VITE_RACKTOP_HUB === 'false' ? <App /> : <HubApp />}
   </StrictMode>,
 )
