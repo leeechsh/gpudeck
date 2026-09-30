@@ -14,6 +14,7 @@ pub struct AppState {
     pub pool: PgPool,
     pub public_url: String,
     pub wecom_webhook: Option<String>,
+    pub secure_cookie: bool,
 }
 
 #[tokio::main]
@@ -38,6 +39,7 @@ async fn main() -> anyhow::Result<()> {
         public_url: env::var("RACKTOP_PUBLIC_URL")
             .unwrap_or_else(|_| "http://127.0.0.1:1420".into()),
         wecom_webhook: env::var("WECOM_WEBHOOK_URL").ok(),
+        secure_cookie: env::var("RACKTOP_SECURE_COOKIE").map_or(true, |value| value != "false"),
     });
     worker::spawn(state.clone());
 

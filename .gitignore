@@ -5,6 +5,8 @@ src-tauri/target/
 .playwright-cli/
 .agents/
 skills-lock.json
+deploy/.env
+deploy/secrets/
 output/playwright/
 .DS_Store
 *.log

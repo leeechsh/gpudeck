@@ -112,8 +112,15 @@ pub async fn bootstrap_admin(pool: &PgPool) -> anyhow::Result<()> {
         return Ok(());
     }
     let username = env::var("RACKTOP_BOOTSTRAP_ADMIN").unwrap_or_else(|_| "admin".into());
-    let password = env::var("RACKTOP_BOOTSTRAP_PASSWORD")
-        .map_err(|_| anyhow::anyhow!("RACKTOP_BOOTSTRAP_PASSWORD is required for first start"))?;
+    let password = match env::var("RACKTOP_BOOTSTRAP_PASSWORD") {
+        Ok(password) => password,
+        Err(_) => {
+            let path = env::var("RACKTOP_BOOTSTRAP_PASSWORD_FILE").map_err(|_| {
+                anyhow::anyhow!("RACKTOP_BOOTSTRAP_PASSWORD or RACKTOP_BOOTSTRAP_PASSWORD_FILE is required for first start")
+            })?;
+            std::fs::read_to_string(path)?.trim().to_string()
+        }
+    };
     if password.len() < 12 {
         anyhow::bail!("bootstrap password must contain at least 12 characters");
     }

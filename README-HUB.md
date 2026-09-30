@@ -15,13 +15,11 @@
 cd deploy
 cp .env.example .env
 mkdir -p secrets
-openssl rand -base64 32 > secrets/postgres_password
-printf 'postgres:5432:racktop:racktop:%s\n' "$(cat secrets/postgres_password)" > secrets/pgpass
-chmod 600 .env secrets/*
+chmod 600 .env
 docker compose up -d --build
 ```
 
-请先把 `.env` 中域名、初始密码和企业微信 webhook 改为真实值，并保证公网 DNS 指向管理机。Caddy 自动签发 HTTPS 证书。初始管理员只会在数据库没有管理员时创建。
+数据库和初始管理员密码由一次性初始化容器生成并保存在仅 Docker 可访问的命名卷中。使用 `docker compose exec secrets-init cat /secrets/admin_password` 在服务器终端读取初始密码。公网部署前请把 `.env` 中域名和企业微信 webhook 改为真实值；Caddy 可自动签发 HTTPS 证书。初始管理员只会在数据库没有管理员时创建。
 
 ## 节点接入
 

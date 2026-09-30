@@ -1,13 +1,29 @@
 services:
+  secrets-init:
+    image: alpine:3.22
+    restart: "no"
+    volumes: [racktop-secrets:/secrets]
+    command:
+      - /bin/sh
+      - -ec
+      - |
+        umask 077
+        test -s /secrets/postgres_password || head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n' > /secrets/postgres_password
+        test -s /secrets/admin_password || head -c 24 /dev/urandom | base64 > /secrets/admin_password
+        chown 65532:65532 /secrets/postgres_password /secrets/admin_password
+        chmod 0400 /secrets/postgres_password /secrets/admin_password
   postgres:
     image: postgres:17-alpine
     restart: unless-stopped
     environment:
       POSTGRES_DB: racktop
       POSTGRES_USER: racktop
-      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
-    secrets: [postgres_password]
-    volumes: [racktop-postgres:/var/lib/postgresql/data]
+      POSTGRES_PASSWORD_FILE: /run/racktop-secrets/postgres_password
+    volumes:
+      - racktop-postgres:/var/lib/postgresql/data
+      - racktop-secrets:/run/racktop-secrets:ro
+    depends_on:
+      secrets-init: { condition: service_completed_successfully }
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U racktop"]
       interval: 10s
@@ -22,14 +38,9 @@ services:
       - path: .env
         required: false
     environment:
-      DATABASE_URL: postgres://racktop@postgres/racktop?sslmode=disable
-      PGPASSFILE: /run/secrets/pgpass
-    secrets:
-      - source: pgpass
-        target: pgpass
-        uid: "65532"
-        gid: "65532"
-        mode: 0400
+      RACKTOP_BOOTSTRAP_PASSWORD_FILE: /run/racktop-secrets/admin_password
+    volumes:
+      - racktop-secrets:/run/racktop-secrets:ro
     depends_on:
       postgres: { condition: service_healthy }
   web:
@@ -38,18 +49,14 @@ services:
       dockerfile: deploy/Dockerfile.web
     restart: unless-stopped
     environment:
-      RACKTOP_DOMAIN: ${RACKTOP_DOMAIN}
-    ports: ["80:80", "443:443"]
+      RACKTOP_SITE_ADDRESS: ${RACKTOP_SITE_ADDRESS:-http://:80}
+    ports: ["127.0.0.1:${RACKTOP_HTTP_PORT:-37935}:80"]
     volumes:
       - caddy-data:/data
       - caddy-config:/config
     depends_on: [hub]
-secrets:
-  postgres_password:
-    file: ./secrets/postgres_password
-  pgpass:
-    file: ./secrets/pgpass
 volumes:
   racktop-postgres:
+  racktop-secrets:
   caddy-data:
   caddy-config:

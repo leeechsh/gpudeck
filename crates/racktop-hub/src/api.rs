@@ -93,10 +93,11 @@ async fn login(
     let user_id: Uuid = row.unwrap().get("id");
     let (token, csrf) = auth::create_session(&state.pool, user_id).await?;
     let mut response = Json(json!({"csrfToken": csrf})).into_response();
+    let secure = if state.secure_cookie { "; Secure" } else { "" };
     response.headers_mut().insert(
         header::SET_COOKIE,
         HeaderValue::from_str(&format!(
-            "racktop_session={token}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=604800"
+            "racktop_session={token}; Path=/; HttpOnly{secure}; SameSite=Lax; Max-Age=604800"
         ))
         .unwrap(),
     );
@@ -116,11 +117,13 @@ async fn logout(
             .await?;
     }
     let mut response = StatusCode::NO_CONTENT.into_response();
+    let secure = if state.secure_cookie { "; Secure" } else { "" };
     response.headers_mut().insert(
         header::SET_COOKIE,
-        HeaderValue::from_static(
-            "racktop_session=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0",
-        ),
+        HeaderValue::from_str(&format!(
+            "racktop_session=; Path=/; HttpOnly{secure}; SameSite=Lax; Max-Age=0"
+        ))
+        .unwrap(),
     );
     Ok(response)
 }

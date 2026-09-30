@@ -1,10 +1,12 @@
-{$RACKTOP_DOMAIN} {
+{$RACKTOP_SITE_ADDRESS:http://:80} {
     encode zstd gzip
-    reverse_proxy /api/* hub:8080
-    reverse_proxy /healthz hub:8080
-    root * /srv
-    try_files {path} /index.html
-    file_server
+    route {
+        reverse_proxy /api/* hub:8080
+        reverse_proxy /healthz hub:8080
+        root * /srv
+        try_files {path} /index.html
+        file_server
+    }
     header {
         Strict-Transport-Security "max-age=31536000; includeSubDomains"
         X-Content-Type-Options "nosniff"
