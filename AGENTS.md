@@ -1,8 +1,8 @@
 ## 0 固定工作区与工具路径
 
-RackTop 开发 Agent 必须优先使用以下固定路径，不得仅依赖当前 shell 的 `PATH` 或工作目录推断工具是否存在：
+GPUDeck 开发 Agent 必须优先使用以下固定路径，不得仅依赖当前 shell 的 `PATH` 或工作目录推断工具是否存在：
 
-- RackTop 仓库根目录：`/Volumes/Lenovo/RackTop`；执行项目命令、读取版本信息、检查 Git 状态和生成安装包时，应显式将该目录作为工作目录。
+- GPUDeck 仓库根目录：`/Volumes/Lenovo/GPUDeck`；执行项目命令、读取版本信息、检查 Git 状态和生成安装包时，应显式将该目录作为工作目录。
 - GitHub CLI：`/Users/tong_zh/.local/bin/gh`；该用户级安装会跨终端和 Codex 会话保留。
 - 当前 shell 的 `PATH` 可能不包含 `~/.local/bin`。`command -v gh` 没有输出时，必须继续检查 `/Users/tong_zh/.local/bin/gh` 是否为可执行文件；文件存在时直接使用绝对路径，不得误报未安装或重复安装。
 - GitHub CLI 二进制与登录状态相互独立。使用前通过 `/Users/tong_zh/.local/bin/gh auth status` 检查系统钥匙串中的认证；认证失效时只重新登录，不重复安装二进制。
@@ -59,11 +59,11 @@ RackTop 开发 Agent 必须优先使用以下固定路径，不得仅依赖当�
 
 ### `esbuild` 开发进程注意事项
 
-`esbuild` 本应只在启动 RackTop 的开发服务时运行，例如执行 `npm run dev`、`vite` 或通过 IDE 启动调试时。它负责监听源码变化并快速重建；关闭开发服务后通常会一起退出。
+`esbuild` 本应只在启动 GPUDeck 的开发服务时运行，例如执行 `npm run dev`、`vite` 或通过 IDE 启动调试时。它负责监听源码变化并快速重建；关闭开发服务后通常会一起退出。
 
 如果 `esbuild` 的父进程已经是 `launchd`（PID 1），说明原本启动它的终端、IDE 或开发服务器已经退出，但 `esbuild` 成了孤儿进程并持续存活。若它长期占用 200% 以上 CPU，常见原因是项目位于外接卷 `/Volumes/Lenovo`，文件监听与同步、索引或大量文件变更形成重建循环；也可能是 Vite 或某个 Node 服务崩溃后没有正确回收子进程。
 
-开发 Agent 不得让 `esbuild` 在没有 RackTop 开发服务的情况下常驻；结束该进程不会影响项目文件。完成开发或停止调试时，应先在启动服务的终端按 `Ctrl+C` 停止服务并确认子进程已退出；如果发现它仍在运行且电脑持续发热，应在“活动监视器”中搜索 `esbuild` 并结束该进程。
+开发 Agent 不得让 `esbuild` 在没有 GPUDeck 开发服务的情况下常驻；结束该进程不会影响项目文件。完成开发或停止调试时，应先在启动服务的终端按 `Ctrl+C` 停止服务并确认子进程已退出；如果发现它仍在运行且电脑持续发热，应在“活动监视器”中搜索 `esbuild` 并结束该进程。
 
 
 ### 验证要求：自动化测试与真实操作
@@ -72,7 +72,7 @@ RackTop 开发 Agent 必须优先使用以下固定路径，不得仅依赖当�
 
 - 根据本次功能的实际风险创建少量、针对性强的测试用例，至少覆盖核心成功路径，以及与本次实现直接相关的边界、错误或回归场景；
 - 优先运行受影响模块的测试、类型检查和构建，再根据变更范围补充更广泛的回归验证；
-- 涉及页面、组件、弹窗、菜单、输入、导航、键盘操作或桌面系统集成时，应在真实 RackTop 应用中使用 `computer-use` 技能完成实际操作验证；
+- 涉及页面、组件、弹窗、菜单、输入、导航、键盘操作或桌面系统集成时，应在真实 GPUDeck 应用中使用 `computer-use` 技能完成实际操作验证；
 - `computer-use` 应用于自动化测试难以覆盖的界面与应用交互，不替代单元测试、集成测试或端到端测试；
 - 真实操作时应验证用户能够完成核心流程，并检查关键状态反馈、错误提示、加载状态和操作结果是否符合预期；
 - 验证完成后应记录实际执行的测试用例、操作路径和结果；发现问题时应先修复并重新验证，再进入交付流程；
@@ -80,7 +80,7 @@ RackTop 开发 Agent 必须优先使用以下固定路径，不得仅依赖当�
 
 ## 2 UI、动画与交互设计技能
 
-RackTop 的网页界面以及 Tauri WebView 中的桌面界面，在进行页面设计、组件实现、动画设计和交互体验优化时，统一优先使用 [`emilkowalski/skills`](https://github.com/emilkowalski/skills) 作为设计工程技能集。
+GPUDeck 的网页界面以及 Tauri WebView 中的桌面界面，在进行页面设计、组件实现、动画设计和交互体验优化时，统一优先使用 [`emilkowalski/skills`](https://github.com/emilkowalski/skills) 作为设计工程技能集。
 
 该技能集用于辅助以下工作：
 
@@ -105,7 +105,7 @@ npx skills@latest add emilkowalski/skills
 
 安装失败时，应明确报告原因和缺失条件，不得假装技能已经生效。只有在无法完成安装时，才可以暂时使用项目现有设计规范继续开发，并在交付说明中记录该降级情况。
 
-该技能属于开发阶段的 Agent Skills，不应被打包为 RackTop 用户端运行依赖。最终用户安装 RackTop 时不需要安装 Node.js、`skills` CLI 或该技能仓库。
+该技能属于开发阶段的 Agent Skills，不应被打包为 GPUDeck 用户端运行依赖。最终用户安装 GPUDeck 时不需要安装 Node.js、`skills` CLI 或该技能仓库。
 
 ### 按任务调用对应技能
 
@@ -138,19 +138,19 @@ npx skills@latest add emilkowalski/skills
 
 进行页面、组件、布局、样式或交互修改时，开发 Agent 必须在开始编写或修改第一行 UI 代码之前，先启动现有界面的开发服务器并提供用户可直接打开的实时预览。用户应能通过热更新看到界面在实现过程中的连续变化，不得等到 UI 实现完成、测试、生产构建或 macOS App 编译后才首次展示结果。
 
-- 接到 UI 任务后，应先确认并启动本地开发服务器，再读取和修改界面文件；RackTop 默认使用 `http://127.0.0.1:1420/`。
+- 接到 UI 任务后，应先确认并启动本地开发服务器，再读取和修改界面文件；GPUDeck 默认使用 `http://127.0.0.1:1420/`。
 - 如果依赖缺失等客观原因导致服务器无法立即启动，应先明确报告阻塞；补齐最小运行条件后第一时间提供预览，不得以“界面还没做完”为由推迟。
-- 必须在对话中使用可点击的 Markdown 链接，例如：[实时预览 RackTop](http://127.0.0.1:1420/)，不得只把地址放在代码块或普通文本中。
+- 必须在对话中使用可点击的 Markdown 链接，例如：[实时预览 GPUDeck](http://127.0.0.1:1420/)，不得只把地址放在代码块或普通文本中。
 - 开发服务器应在修改期间保持运行，利用热更新让用户能够随时查看当前进展并尽早反馈；后续重要界面调整后应主动提醒用户刷新或重新查看预览。
 - UI 实现达到当前计划状态后，除非用户明确要求先审批网页或截图，否则应立即进入本地 App、Rust/Tauri 和实际功能验证，不得把网页预览变成等待用户再次确认的额外关卡。
 - 启动后必须确认链接实际加载的是当前工作区的最新源码，不得把旧构建资源、旧版本号或其他项目占用的服务误报为当前预览。
-- 如果 `1420` 端口已由当前 RackTop 开发服务器占用，应直接复用；如果被其他程序占用，应选择新的可用端口，并向用户提供实际可点击地址。
+- 如果 `1420` 端口已由当前 GPUDeck 开发服务器占用，应直接复用；如果被其他程序占用，应选择新的可用端口，并向用户提供实际可点击地址。
 - 实时预览用于提前确认设计和交互，不替代 TypeScript 检查、自动化测试、生产构建、Rust/Tauri 验证或原生 macOS App 实机验证。
 - 仅能在原生 App 中验证的行为应明确说明限制；只要相关 WebView 页面能够独立预览，仍应先提供网页预览供用户检查布局与视觉效果。
 
-### RackTop 动效原则
+### GPUDeck 动效原则
 
-RackTop 是高信息密度的实时监控工具，动效应遵循以下原则：
+GPUDeck 是高信息密度的实时监控工具，动效应遵循以下原则：
 
 - 动画服务于状态变化和空间关系，不作为装饰；
 - 实时图表更新应平滑，但不得造成数据延迟或视觉误导；
@@ -165,7 +165,7 @@ RackTop 是高信息密度的实时监控工具，动效应遵循以下原则：
 
 每当完成一个独立、可交付的需求，包括新增功能、Bug 修复、功能优化、重构、兼容性调整或文档变更，开发 Agent 必须同步完成版本号计算、版本说明更新、验证、Git 提交以及 GitHub 上传。不得只修改代码而遗漏版本信息，也不得在交付完成后把版本记录延迟到下一次需求。
 
-仅修改 `Agent.md` 中的 Agent 工作规范，或单独补充由详细版本记录派生的 `docs/Version_overview.md`，属于开发流程维护，不计入 RackTop 产品版本，不修改 npm、Cargo、Tauri 版本号，也不新增产品版本条目；仍应提交并推送该规范变更。
+仅修改 `Agent.md` 中的 Agent 工作规范，或单独补充由详细版本记录派生的 `docs/Version_overview.md`，属于开发流程维护，不计入 GPUDeck 产品版本，不修改 npm、Cargo、Tauri 版本号，也不新增产品版本条目；仍应提交并推送该规范变更。
 
 ### 完成标准
 
@@ -176,7 +176,7 @@ RackTop 是高信息密度的实时监控工具，动效应遵循以下原则：
 3. 已根据当前最新版本计算新版本号；
 4. 已同步更新详细版本说明 `docs/VERSION_INFOS.md` 与简明更新说明 `docs/Version_overview.md`；
 5. 已创建包含当前版本号的 Git 提交；
-6. 已将提交推送到 RackTop GitHub 仓库；
+6. 已将提交推送到 GPUDeck GitHub 仓库；
 7. 项目采用 Pull Request 流程时，已创建或更新对应 PR；
 8. 产品版本已合并到默认分支后，已创建对应版本标签与 GitHub Release；
 9. 已向 GitHub Release 上传实际构建并验证过的安装包，并记录文件校验值；
@@ -186,7 +186,7 @@ RackTop 是高信息密度的实时监控工具，动效应遵循以下原则：
 
 ### 版本号规则
 
-RackTop 使用 `主版本.次版本.修订版本`（`x.y.z`）格式。
+GPUDeck 使用 `主版本.次版本.修订版本`（`x.y.z`）格式。
 
 - **Bug 修复**：递增修订版本号，即 `x.y.z → x.y.(z+1)`。
   - 示例：`0.1.1 → 0.1.2`
@@ -334,9 +334,9 @@ v0.2.0 feat: 增加 GPU 告警规则管理
 
 ### GitHub 提交与上传流程
 
-需求完成后，开发 Agent 必须使用 GitHub 技能和可用的 Git 工具，将本次修改上传到 RackTop GitHub 仓库。
+需求完成后，开发 Agent 必须使用 GitHub 技能和可用的 Git 工具，将本次修改上传到 GPUDeck GitHub 仓库。
 
-1. 检查 `git status`、当前分支、远程仓库和完整差异，确认仓库确实是 RackTop。
+1. 检查 `git status`、当前分支、远程仓库和完整差异，确认仓库确实是 GPUDeck。
 2. 只暂存当前需求相关的源代码、测试、配置、文档以及 `docs/VERSION_INFOS.md`，不得静默夹带无关修改。
 3. 如果当前位于默认分支，应按项目约定创建独立需求分支，例如：
 
@@ -345,7 +345,7 @@ v0.2.0 feat: 增加 GPU 告警规则管理
    ```
 
 4. 使用包含版本号的提交说明创建 Git 提交。
-5. 将当前分支推送到 RackTop 的远程 GitHub 仓库，并设置上游分支。
+5. 将当前分支推送到 GPUDeck 的远程 GitHub 仓库，并设置上游分支。
 6. 项目采用 Pull Request 流程时，应创建或更新对应 PR；默认创建 Draft PR，除非用户明确要求直接提交或标记为可审查。
 7. PR 标题必须包含版本号，格式可与提交说明保持一致，例如：
 
@@ -360,15 +360,15 @@ v0.2.0 feat: 增加 GPU 告警规则管理
 
 ### GitHub Release 发布流程
 
-每个 RackTop 产品版本在代码合并到默认分支后，必须同步发布 GitHub Release。仅完成 Git 提交、分支推送或 Pull Request 合并，不代表版本已经发布。
+每个 GPUDeck 产品版本在代码合并到默认分支后，必须同步发布 GitHub Release。仅完成 Git 提交、分支推送或 Pull Request 合并，不代表版本已经发布。
 
 1. 确认默认分支已经包含当前版本提交，版本号与 `package.json`、Cargo、Tauri 配置以及版本说明一致。
 2. 使用 `vX.Y.Z` 格式创建版本标签，并确保标签指向默认分支中实际发布的提交；不得把正式版本标签留在尚未合并的功能分支提交上。
-3. 创建同版本的 GitHub Release。正式可用版本应标记为 Latest，标题使用 `RackTop vX.Y.Z 稳定版`；测试版本应标记为 Pre-release，标题使用 `RackTop vX.Y.Z 测试版`。
+3. 创建同版本的 GitHub Release。正式可用版本应标记为 Latest，标题使用 `GPUDeck vX.Y.Z 稳定版`；测试版本应标记为 Pre-release，标题使用 `GPUDeck vX.Y.Z 测试版`。
 4. GitHub 页面顶部显示的作者、发布时间、Latest、版本标签、目标提交和“自此版本以来的提交数量”由 GitHub 自动生成，不得重复写入 Release 正文。
 5. Release 正文只允许“主要更新”和“下载”两个模块，不加入验证、测试数量、开发过程、提交记录和内部实现细节。
 6. 上传实际构建并验证过的发布产物。macOS 应优先上传可直接下载的 `.dmg`；暂时无法生成 `.dmg` 时，可上传保留签名结构的 `.zip`。Windows 应上传实际验证过的安装程序，不得用源码压缩包冒充安装包。
-7. 每个上传产物必须使用清楚的版本、平台和架构命名，例如 `RackTop_1.24.1_macos-arm64.dmg`。发布前应核对 GitHub Assets 自动生成的 Digest，但不得在 Release 正文中手动重复 SHA-256。
+7. 每个上传产物必须使用清楚的版本、平台和架构命名，例如 `GPUDeck_1.24.1_macos-arm64.dmg`。发布前应核对 GitHub Assets 自动生成的 Digest，但不得在 Release 正文中手动重复 SHA-256。
 8. 发布后重新打开 Release 页面，核对标签、目标提交、Latest/Pre-release 状态、说明正文和所有附件均真实可见且可下载。
 9. 如果安装包构建、签名、公证、上传、标签创建或 Release 发布失败，必须明确报告为未完成，不得只提供本地 App 路径并声称版本已经发布。
 
@@ -376,13 +376,13 @@ Release 发布不得夹带或修改工作区中的无关内容。创建标签和
 
 ### GitHub Actions 构建与安装包命名
 
-RackTop 的 macOS、Windows 安装包和自动更新附件统一由 `.github/workflows/build.yml` 构建。开发 Agent 修改构建或发布流程时必须同步维护该工作流，不得只在本机执行一套无法由 GitHub Actions 复现的临时命令。
+GPUDeck 的 macOS、Windows 安装包和自动更新附件统一由 `.github/workflows/build.yml` 构建。开发 Agent 修改构建或发布流程时必须同步维护该工作流，不得只在本机执行一套无法由 GitHub Actions 复现的临时命令。
 
 - 推送 `v*` 标签时必须构建 macOS Apple Silicon 与 Windows x64 两个平台；通过 `workflow_dispatch` 手动触发时，可使用 `build_macos` 和 `build_windows` 选择平台。
 - macOS job 必须运行前端与 Rust 测试，完成 App 签名、可选公证、DMG 校验，并生成 updater 使用的 `.app.tar.gz` 与 `.sig`。
 - Windows job 必须运行前端与 Rust 测试，构建 NSIS `*-setup.exe` 与中文 MSI，随后完成 MSI 解包检查、NSIS 静默安装、App 启动和静默卸载；只有烟雾测试通过后才能上传 Artifact。
 - 每次正式构建必须生成 4 个发布文件，并分别上传为 4 个独立 Artifact 容器：macOS DMG、macOS `.app.tar.gz`、Windows NSIS `setup.exe` 和 Windows MSI。macOS DMG 与 `.app.tar.gz` 不得合并到同一个 Artifact；`.sig` 是生成 updater 清单所需的内部签名文件，可跟随对应 updater 容器，但不计入 4 个 Release 发布文件。
-- GitHub Actions Artifact 是 ZIP 下载容器，容器名不是安装包文件名。容器名必须包含真实版本、平台和包类型，例如 `RackTop_X.Y.Z_x64-setup`；容器内必须保留真实文件名 `RackTop_X.Y.Z_x64-setup.exe`，不得只使用 `nsis`、`windows` 等无法直接判断安装方式的名称。
+- GitHub Actions Artifact 是 ZIP 下载容器，容器名不是安装包文件名。容器名必须包含真实版本、平台和包类型，例如 `GPUDeck_X.Y.Z_x64-setup`；容器内必须保留真实文件名 `GPUDeck_X.Y.Z_x64-setup.exe`，不得只使用 `nsis`、`windows` 等无法直接判断安装方式的名称。
 - Windows 用户优先验证和下载 `x64-setup` Artifact；`x64_zh-CN-msi` 用于 MSI 部署验证。不得把 MSI 描述为 setup.exe，也不得把 Artifact ZIP 本身描述为安装程序。
 - Actions 中的 `.sig` 用于生成和核对 updater 清单，可保留在工作流 Artifact 中；正式 GitHub Release 不单独上传 `.sig`。
 - 构建完成后必须用 GitHub CLI 或 Actions 页面核对 4 个发布文件的内部文件名、版本和 SHA-256，不得只依据 job 成功状态报告安装包可用。
@@ -396,7 +396,7 @@ RackTop 的 macOS、Windows 安装包和自动更新附件统一由 `.github/wor
 2. 构建并验证 macOS DMG、macOS `.app.tar.gz`、Windows NSIS `setup.exe` 和 Windows MSI；记录四个发布文件的 SHA-256，并保留 `.app.tar.gz.sig` 与 `setup.exe.sig` 供生成清单。
 3. 创建指向默认分支发布提交的 `vX.Y.Z` 标签和 GitHub Release，上传且仅上传用户安装包与 macOS updater 技术附件：DMG、NSIS EXE、MSI、`.app.tar.gz`。不得把 `latest.json` 或任何 `.sig` 作为 Release 附件。
 4. 验证 Release 中四个附件真实可下载，文件名、版本、架构、大小和 SHA-256 与 Actions 产物一致；Release 正文的“下载”模块必须列出 DMG、`.app.tar.gz`、EXE 和 MSI 四个文件，但不得手动列出 SHA-256，校验值以 GitHub Assets 自动显示的 Digest 为准。
-5. 最后创建或更新独立 `updater` 分支根目录的 `latest.json`；没有该文件或没有当前平台条目时，已安装的 RackTop 无法识别和安装新版本。`darwin-aarch64` 指向 Release 的 `.app.tar.gz`，`windows-x86_64` 指向同一 Release 的 NSIS `setup.exe`，对应 `.sig` 的完整内容内嵌到各平台 `signature` 字段。
+5. 最后创建或更新独立 `updater` 分支根目录的 `latest.json`；没有该文件或没有当前平台条目时，已安装的 GPUDeck 无法识别和安装新版本。`darwin-aarch64` 指向 Release 的 `.app.tar.gz`，`windows-x86_64` 指向同一 Release 的 NSIS `setup.exe`，对应 `.sig` 的完整内容内嵌到各平台 `signature` 字段。
 6. 从 GitHub Raw 地址重新读取 `latest.json`，确认 JSON 有效、版本正确、两个平台 URL 可下载且签名字段非空；清单提交与产品 Release 提交相互独立，不得把 updater 分支合并到 `main`。
 7. 使用保留原应用标识和数据目录的上一稳定版 App 实际升级到当前稳定版。macOS 和 Windows 分别验证能通过 `latest.json` 发现更新，并完成下载进度、签名校验、安装、重启、版本变化与原有数据保留；未完成的平台必须明确记录。
 
@@ -405,16 +405,16 @@ RackTop 的 macOS、Windows 安装包和自动更新附件统一由 `.github/wor
 ```json
 {
   "version": "X.Y.Z",
-  "notes": "RackTop vX.Y.Z 稳定版",
+  "notes": "GPUDeck vX.Y.Z 稳定版",
   "pub_date": "YYYY-MM-DDTHH:mm:ssZ",
   "platforms": {
     "darwin-aarch64": {
-      "url": "https://github.com/Tongzh-SEU/RackTop/releases/download/vX.Y.Z/RackTop_X.Y.Z_macos-arm64.app.tar.gz",
-      "signature": "<RackTop_X.Y.Z_macos-arm64.app.tar.gz.sig 的完整内容>"
+      "url": "https://github.com/leeechsh/gpudeck/releases/download/vX.Y.Z/GPUDeck_X.Y.Z_macos-arm64.app.tar.gz",
+      "signature": "<GPUDeck_X.Y.Z_macos-arm64.app.tar.gz.sig 的完整内容>"
     },
     "windows-x86_64": {
-      "url": "https://github.com/Tongzh-SEU/RackTop/releases/download/vX.Y.Z/RackTop_X.Y.Z_x64-setup.exe",
-      "signature": "<RackTop_X.Y.Z_x64-setup.exe.sig 的完整内容>"
+      "url": "https://github.com/leeechsh/gpudeck/releases/download/vX.Y.Z/GPUDeck_X.Y.Z_x64-setup.exe",
+      "signature": "<GPUDeck_X.Y.Z_x64-setup.exe.sig 的完整内容>"
     }
   }
 }
@@ -425,13 +425,13 @@ RackTop 的 macOS、Windows 安装包和自动更新附件统一由 `.github/wor
 自动更新正式 Release 的附件固定为：
 
 ```text
-RackTop_X.Y.Z_macos-arm64.dmg
-RackTop_X.Y.Z_x64-setup.exe
-RackTop_X.Y.Z_x64_zh-CN.msi
-RackTop_X.Y.Z_macos-arm64.app.tar.gz
+GPUDeck_X.Y.Z_macos-arm64.dmg
+GPUDeck_X.Y.Z_x64-setup.exe
+GPUDeck_X.Y.Z_x64_zh-CN.msi
+GPUDeck_X.Y.Z_macos-arm64.app.tar.gz
 ```
 
-其中 Windows updater 直接复用 NSIS `RackTop_X.Y.Z_x64-setup.exe`，不得另造第二个 Windows 更新包；macOS `.app.tar.gz` 必须在最终 App 签名完成后生成并使用 updater 私钥签名，避免其内容与 DMG 内的 App 签名状态不一致。
+其中 Windows updater 直接复用 NSIS `GPUDeck_X.Y.Z_x64-setup.exe`，不得另造第二个 Windows 更新包；macOS `.app.tar.gz` 必须在最终 App 签名完成后生成并使用 updater 私钥签名，避免其内容与 DMG 内的 App 签名状态不一致。
 
 #### Release 正文格式
 
@@ -452,10 +452,10 @@ RackTop_X.Y.Z_macos-arm64.app.tar.gz
 
 ## 下载
 
-- `RackTop_X.Y.Z_macos-arm64.dmg`：Apple Silicon macOS 安装镜像
-- `RackTop_X.Y.Z_macos-arm64.app.tar.gz`：Apple Silicon macOS 应用程序
-- `RackTop_X.Y.Z_x64-setup.exe`：Windows x64 安装程序
-- `RackTop_X.Y.Z_x64_zh-CN.msi`：Windows x64 MSI 安装包
+- `GPUDeck_X.Y.Z_macos-arm64.dmg`：Apple Silicon macOS 安装镜像
+- `GPUDeck_X.Y.Z_macos-arm64.app.tar.gz`：Apple Silicon macOS 应用程序
+- `GPUDeck_X.Y.Z_x64-setup.exe`：Windows x64 安装程序
+- `GPUDeck_X.Y.Z_x64_zh-CN.msi`：Windows x64 MSI 安装包
 
 首次打开若 macOS 提示来源限制，请在“系统设置 → 隐私与安全性”中确认打开。
 ```

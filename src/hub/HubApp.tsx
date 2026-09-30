@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { Activity } from 'lucide-react'
 import App from '../App'
 import { hubApi, User } from './api'
-import { HubProvider } from './HubFeatures'
+import { HubPasswordChange, HubProvider } from './HubFeatures'
 import './hub.css'
 
 export default function HubApp() {
@@ -12,7 +12,8 @@ export default function HubApp() {
 
   useEffect(() => { hubApi.me().then(setUser).catch(() => undefined).finally(() => setLoading(false)) }, [])
 
-  if (loading) return <div className="hub-gate"><span className="brand__mark"><Activity size={22}/></span><p>正在连接 RackTop Hub…</p></div>
+  if (loading) return <div className="hub-gate"><span className="brand__mark"><Activity size={22}/></span><p>正在连接 GPUDeck Hub…</p></div>
+  if (user?.mustChangePassword) return <HubPasswordChange user={user} onChanged={setUser}/>
   if (user) return <HubProvider user={user} onLogout={() => setUser(null)}><App /></HubProvider>
 
   return <div className="hub-gate"><form className="panel hub-login" onSubmit={async event => {
@@ -27,7 +28,7 @@ export default function HubApp() {
     } finally { setLoading(false) }
   }}>
     <span className="brand__mark hub-login__mark"><Activity size={24}/></span>
-    <h1>RackTop</h1><p>算力监控</p>
+    <h1>GPUDeck</h1><p>Collaborative GPU Resource Management</p>
     <label>用户名<input name="username" autoComplete="username" required autoFocus/></label>
     <label>密码<input name="password" type="password" autoComplete="current-password" required/></label>
     {error && <div className="hub-login__error">{error}</div>}

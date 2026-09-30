@@ -3,10 +3,10 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 APP_VERSION="$(node -p "require('$ROOT_DIR/package.json').version")"
-TARGET="${RACKTOP_MACOS_TARGET:-aarch64-apple-darwin}"
-SKIP_BUILD="${RACKTOP_SKIP_BUILD:-0}"
+TARGET="${GPUDECK_MACOS_TARGET:-aarch64-apple-darwin}"
+SKIP_BUILD="${GPUDECK_SKIP_BUILD:-0}"
 SIGNING_IDENTITY="${APPLE_SIGNING_IDENTITY:--}"
-MARK_UNSIGNED="${RACKTOP_MARK_UNSIGNED:-0}"
+MARK_UNSIGNED="${GPUDECK_MARK_UNSIGNED:-0}"
 
 case "$TARGET" in
   aarch64-apple-darwin) ARCH_LABEL="arm64" ;;
@@ -19,7 +19,7 @@ esac
 
 TARGET_ROOT="${CARGO_TARGET_DIR:-$ROOT_DIR/src-tauri/target}"
 TARGET_DIR="$TARGET_ROOT/$TARGET/release/bundle"
-APP_PATH="$TARGET_DIR/macos/RackTop.app"
+APP_PATH="$TARGET_DIR/macos/GPUDeck.app"
 NOTARY_VALUES=0
 for value in "${APPLE_ID:-}" "${APPLE_PASSWORD:-}" "${APPLE_TEAM_ID:-}"; do
   if [ -n "$value" ]; then
@@ -40,14 +40,14 @@ if [ "$SIGNING_IDENTITY" = "-" ] && [ "$MARK_UNSIGNED" = "1" ]; then
 elif [ "$SIGNING_IDENTITY" != "-" ] && [ "$NOTARY_VALUES" -ne 3 ]; then
   DMG_SUFFIX="-unnotarized"
 fi
-DMG_PATH="$TARGET_DIR/dmg/RackTop_${APP_VERSION}_macos-${ARCH_LABEL}${DMG_SUFFIX}.dmg"
+DMG_PATH="$TARGET_DIR/dmg/GPUDeck_${APP_VERSION}_macos-${ARCH_LABEL}${DMG_SUFFIX}.dmg"
 CHECKSUM_PATH="$DMG_PATH.sha256"
 SIGNING_INFO_PATH="$DMG_PATH.signing.txt"
-UPDATER_PATH="$TARGET_DIR/macos/RackTop_${APP_VERSION}_macos-${ARCH_LABEL}.app.tar.gz"
+UPDATER_PATH="$TARGET_DIR/macos/GPUDeck_${APP_VERSION}_macos-${ARCH_LABEL}.app.tar.gz"
 DMG_BACKGROUND_SVG="$ROOT_DIR/src-tauri/dmg-background.svg"
 DMG_BACKGROUND_RENDERER="$ROOT_DIR/scripts/render-dmg-background.swift"
-DMG_VOLUME_NAME="安装 RackTop ${APP_VERSION}"
-STAGE_DIR="$(mktemp -d /private/tmp/racktop-dmg.XXXXXX)"
+DMG_VOLUME_NAME="安装 GPUDeck ${APP_VERSION}"
+STAGE_DIR="$(mktemp -d /private/tmp/gpudeck-dmg.XXXXXX)"
 MOUNT_DIR=""
 RW_DMG_PATH=""
 
@@ -56,13 +56,13 @@ cleanup() {
     hdiutil detach "$MOUNT_DIR" >/dev/null || true
   fi
   case "$STAGE_DIR" in
-    /private/tmp/racktop-dmg.*) rm -rf "$STAGE_DIR" ;;
+    /private/tmp/gpudeck-dmg.*) rm -rf "$STAGE_DIR" ;;
   esac
   case "$MOUNT_DIR" in
-    /private/tmp/racktop-mount.*) rmdir "$MOUNT_DIR" 2>/dev/null || true ;;
+    /private/tmp/gpudeck-mount.*) rmdir "$MOUNT_DIR" 2>/dev/null || true ;;
   esac
   case "$RW_DMG_PATH" in
-    /private/tmp/racktop-dmg.*.dmg) rm -f "$RW_DMG_PATH" ;;
+    /private/tmp/gpudeck-dmg.*.dmg) rm -f "$RW_DMG_PATH" ;;
   esac
 }
 trap cleanup EXIT
@@ -75,7 +75,7 @@ if [ "$SKIP_BUILD" != "1" ]; then
 fi
 
 if [ ! -d "$APP_PATH" ]; then
-  printf 'RackTop.app was not found at %s\n' "$APP_PATH" >&2
+  printf 'GPUDeck.app was not found at %s\n' "$APP_PATH" >&2
   exit 1
 fi
 
@@ -109,14 +109,14 @@ if [ ! -f "$DMG_BACKGROUND_RENDERER" ]; then
   exit 1
 fi
 
-ditto --norsrc --noextattr --noqtn "$APP_PATH" "$STAGE_DIR/RackTop.app"
+ditto --norsrc --noextattr --noqtn "$APP_PATH" "$STAGE_DIR/GPUDeck.app"
 ln -s /Applications "$STAGE_DIR/应用程序"
 mkdir -p "$STAGE_DIR/.background"
 swift "$DMG_BACKGROUND_RENDERER" "$DMG_BACKGROUND_SVG" "$STAGE_DIR/.background/background.png" 1
 swift "$DMG_BACKGROUND_RENDERER" "$DMG_BACKGROUND_SVG" "$STAGE_DIR/.background/background@2x.png" 2
 chflags hidden "$STAGE_DIR/.background"
 mkdir -p "$(dirname "$DMG_PATH")"
-RW_DMG_PATH="$(mktemp /private/tmp/racktop-dmg.XXXXXX.dmg)"
+RW_DMG_PATH="$(mktemp /private/tmp/gpudeck-dmg.XXXXXX.dmg)"
 rm -f "$RW_DMG_PATH"
 hdiutil create -volname "$DMG_VOLUME_NAME" -srcfolder "$STAGE_DIR" -ov -format UDRW "$RW_DMG_PATH"
 MOUNT_DIR="/Volumes/$DMG_VOLUME_NAME"
@@ -143,7 +143,7 @@ tell application "Finder"
     set icon size of theViewOptions to 96
     set text size of theViewOptions to 13
     set background picture of theViewOptions to file ".background:background.png"
-    set position of item "RackTop.app" of container window to {205, 188}
+    set position of item "GPUDeck.app" of container window to {205, 188}
     set position of item "应用程序" of container window to {515, 188}
     close container window
     open
@@ -180,11 +180,11 @@ if [ "$NOTARY_VALUES" -eq 3 ]; then
 fi
 
 hdiutil verify "$DMG_PATH"
-MOUNT_DIR="$(mktemp -d /private/tmp/racktop-mount.XXXXXX)"
+MOUNT_DIR="$(mktemp -d /private/tmp/gpudeck-mount.XXXXXX)"
 hdiutil attach "$DMG_PATH" -readonly -nobrowse -mountpoint "$MOUNT_DIR" >/dev/null
-codesign --verify --deep --strict --verbose=2 "$MOUNT_DIR/RackTop.app"
+codesign --verify --deep --strict --verbose=2 "$MOUNT_DIR/GPUDeck.app"
 if [ "$NOTARIZATION_MODE" = "notarized and stapled" ]; then
-  spctl --assess --type execute --verbose=2 "$MOUNT_DIR/RackTop.app"
+  spctl --assess --type execute --verbose=2 "$MOUNT_DIR/GPUDeck.app"
 fi
 hdiutil detach "$MOUNT_DIR" >/dev/null
 rmdir "$MOUNT_DIR"

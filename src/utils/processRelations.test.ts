@@ -32,7 +32,7 @@ describe('process relationships', () => {
     expect(currentUserAcceleratorCount({ ...snapshot, processes: [...snapshot.processes, duplicateGpu] })).toBe(2)
   })
 
-  it('hides background account CPU usage when no RackTop task is attributed to the current user', () => {
+  it('hides background account CPU usage when no GPUDeck task is attributed to the current user', () => {
     const withoutCurrentUserTasks = {
       ...snapshot,
       system: { ...snapshot.system, currentUserCpuUtilization: 20.8 },

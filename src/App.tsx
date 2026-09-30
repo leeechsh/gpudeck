@@ -65,7 +65,7 @@ import { checkDesktopAppUpdate, relaunchUpdatedApp, type DesktopAppUpdate, type 
 import { openExternalUrl } from './services/external'
 import { popupServerContextMenu } from './services/serverContextMenu'
 import type { AppSettings, DetailTab, GpuMemoryStallWarning, HistoryHeatmapPoint, HistoryPoint, HostKeyInfo, IdleReservation, IdleReservationFilters, InteractionLogSummary, LinkedProjectResourcePlan, Project, ProjectDraft, ProjectSyncProgress, RemoteHistorySyncResult, Server, ServerDraft, ServerNotificationCategory, ServerNotificationSettings, Snapshot } from './types/models'
-import { isRackTopManagedIdentity } from './utils/sshSetup'
+import { isGPUDeckManagedIdentity } from './utils/sshSetup'
 import { DeleteServerDialog } from './components/DeleteServerDialog'
 import { AppUpdateDialog } from './components/AppUpdateDialog'
 import { HistoryHeatmaps, StorageWaffleList } from './components/HistoryHeatmap'
@@ -110,9 +110,9 @@ import packageInfo from '../package.json'
 
 const appPlatform = detectAppPlatform(api.isDesktop, navigator.userAgent)
 const browserPreviewState = api.isDesktop || typeof window === 'undefined' ? null : new URLSearchParams(window.location.search).get('previewState')
-const releaseUrl = (version: string) => `https://github.com/Tongzh-SEU/RackTop/releases/tag/v${version.replace(/^v/i, '')}`
+const releaseUrl = (version: string) => `https://github.com/leeechsh/gpudeck/releases/tag/v${version.replace(/^v/i, '')}`
 
-const ONBOARDING_DISMISSED_KEY = 'racktop.onboardingDismissed.v1'
+const ONBOARDING_DISMISSED_KEY = 'gpudeck.onboardingDismissed.v1'
 
 const tabs: Array<{ value: DetailTab; label: string }> = [
   { value: 'overview', label: '概览' },
@@ -125,12 +125,12 @@ const tabs: Array<{ value: DetailTab; label: string }> = [
 ]
 
 function storedFleetSort(): FleetSort {
-  const value = localStorage.getItem('racktop.fleetSort')
+  const value = localStorage.getItem('gpudeck.fleetSort')
   return value === 'status' || value === 'gpuCount' || value === 'utilization' || value === 'idleCount' || value === 'myProcesses' ? value : 'name'
 }
 
 function storedFleetDescending() {
-  return localStorage.getItem('racktop.fleetDescending') === 'true'
+  return localStorage.getItem('gpudeck.fleetDescending') === 'true'
 }
 
 function formatBytes(bytes: number) {
@@ -367,7 +367,7 @@ function App() {
   const expectedProcessExitsRef = useRef(new Set<string>())
   const ignoredMineProcessWarningsRef = useRef<Set<string>>((() => {
     try {
-      const value = JSON.parse(localStorage.getItem('racktop.ignoredMineProcessWarnings.v1') ?? '[]')
+      const value = JSON.parse(localStorage.getItem('gpudeck.ignoredMineProcessWarnings.v1') ?? '[]')
       return new Set(Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : [])
     } catch { return new Set() }
   })())
@@ -393,7 +393,7 @@ function App() {
   const reservationPendingSince = useRef<Record<string, Record<string, number>>>({})
   const gpuMemoryStallSince = useRef<Record<string, number>>((() => {
     try {
-      const value = JSON.parse(localStorage.getItem('racktop.gpuMemoryStallSince.v1') ?? '{}')
+      const value = JSON.parse(localStorage.getItem('gpudeck.gpuMemoryStallSince.v1') ?? '{}')
       return value && typeof value === 'object' && !Array.isArray(value) ? value : {}
     } catch { return {} }
   })())
@@ -401,7 +401,7 @@ function App() {
   const [ignoredGpuMemoryStallWarningIds, setIgnoredGpuMemoryStallWarningIds] = useState<Set<string>>(() => {
     if (typeof localStorage === 'undefined') return new Set<string>()
     try {
-      const value = JSON.parse(localStorage.getItem('racktop.ignoredGpuMemoryStallWarnings.v1') ?? '[]')
+      const value = JSON.parse(localStorage.getItem('gpudeck.ignoredGpuMemoryStallWarnings.v1') ?? '[]')
       return new Set(Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : [])
     } catch { return new Set() }
   })
@@ -487,7 +487,7 @@ function App() {
           ignoredWarningsChanged = true
         }
       }
-      if (ignoredWarningsChanged) localStorage.setItem('racktop.ignoredMineProcessWarnings.v1', JSON.stringify([...ignoredMineProcessWarningsRef.current]))
+      if (ignoredWarningsChanged) localStorage.setItem('gpudeck.ignoredMineProcessWarnings.v1', JSON.stringify([...ignoredMineProcessWarningsRef.current]))
       setMineProcessWarnings((current) => [
         ...current.filter((warning) => warning.serverId !== serverId || warning.id.startsWith('exit:')),
         ...nextServerWarnings.filter((warning) => !ignoredMineProcessWarningsRef.current.has(warning.id)),
@@ -757,13 +757,13 @@ function App() {
         if (result.pendingNames.length > 0 && !remoteCleanupNoticeKeys.current.has('pending')) {
           remoteCleanupNoticeKeys.current.add('pending')
           const names = result.pendingNames.map(serverDisplayName).join('、')
-          void api.notify(`${names} 远端清理等待重连`, '已从服务器列表移除；RackTop 将在 24 小时内继续自动重试。')
+          void api.notify(`${names} 远端清理等待重连`, '已从服务器列表移除；GPUDeck 将在 24 小时内继续自动重试。')
           setToast(`${names} 的远端数据清理等待重连，自动重试最多 24 小时`)
         }
         if (result.expiredNames.length > 0 && !remoteCleanupNoticeKeys.current.has('expired')) {
           remoteCleanupNoticeKeys.current.add('expired')
           const names = result.expiredNames.map(serverDisplayName).join('、')
-          void api.notify(`${names} 远端数据需要手动清理`, `自动清理已超过 24 小时。请 SSH 登录后执行：if [ -f ~/.racktop/.daemon.pid ]; then kill "$(cat ~/.racktop/.daemon.pid)" 2>/dev/null || true; fi; rm -rf -- ~/.racktop`)
+          void api.notify(`${names} 远端数据需要手动清理`, `自动清理已超过 24 小时。请 SSH 登录后执行：if [ -f ~/.gpudeck/.daemon.pid ]; then kill "$(cat ~/.gpudeck/.daemon.pid)" 2>/dev/null || true; fi; rm -rf -- ~/.gpudeck`)
           setToast(`${names} 的远端自动清理已超过 24 小时，请查看系统通知并手动清理`)
         }
       } catch (error) {
@@ -889,8 +889,8 @@ function App() {
       else if (payload === 'menu-view-idle') setMainView('idle')
       else if (payload === 'menu-view-mine') setMainView('mine')
       else if (payload === 'menu-view-logs') setShowActivityLog(true)
-      else if (payload === 'menu-help-guide') void openExternalUrl('https://github.com/Tongzh-SEU/RackTop/blob/main/README.md')
-      else if (payload === 'menu-help-project') void openExternalUrl('https://github.com/Tongzh-SEU/RackTop')
+      else if (payload === 'menu-help-guide') void openExternalUrl('https://github.com/leeechsh/gpudeck/blob/main/README.md')
+      else if (payload === 'menu-help-project') void openExternalUrl('https://github.com/leeechsh/gpudeck')
     })
     return () => {
       void unlistenTray.then((dispose) => dispose())
@@ -955,13 +955,13 @@ function App() {
     if (!api.isDesktop) return
     const root = document.querySelector<HTMLElement>('.app-shell')
     if (!root) return
-    let zoom = Math.min(2, Math.max(0.5, Number(localStorage.getItem('racktop.uiZoom') ?? '1') || 1))
+    let zoom = Math.min(2, Math.max(0.5, Number(localStorage.getItem('gpudeck.uiZoom') ?? '1') || 1))
     const applyZoom = () => {
       // Keep layout geometry stable while scaling the application surface. CSS zoom
       // changes grid measurement and causes masonry cards to overlap at non-100%.
       root.style.setProperty('--ui-zoom', String(zoom))
       root.style.setProperty('--ui-zoom-inverse', String(1 / zoom))
-      localStorage.setItem('racktop.uiZoom', String(zoom))
+      localStorage.setItem('gpudeck.uiZoom', String(zoom))
       setZoomNotice(zoom)
     }
     zoomAdjustRef.current = (delta) => { zoom = Math.min(2, Math.max(0.5, zoom + delta)); applyZoom() }
@@ -982,8 +982,8 @@ function App() {
   }, [zoomNotice])
 
   useEffect(() => {
-    localStorage.setItem('racktop.fleetSort', fleetSort)
-    localStorage.setItem('racktop.fleetDescending', String(fleetDescending))
+    localStorage.setItem('gpudeck.fleetSort', fleetSort)
+    localStorage.setItem('gpudeck.fleetDescending', String(fleetDescending))
     localStorage.setItem(FLEET_SORT_MODE_STORAGE_KEY, fleetSortMode)
   }, [fleetSort, fleetDescending, fleetSortMode])
 
@@ -1080,7 +1080,7 @@ function App() {
     const now = Math.max(...Object.values(snapshots).map((snapshot) => snapshot.timestamp), 0)
     const result = deriveGpuMemoryStallWarnings(servers, snapshots, gpuMemoryStallSince.current, ignoredGpuMemoryStallWarningIds, now)
     gpuMemoryStallSince.current = result.since
-    localStorage.setItem('racktop.gpuMemoryStallSince.v1', JSON.stringify(result.since))
+    localStorage.setItem('gpudeck.gpuMemoryStallSince.v1', JSON.stringify(result.since))
     setGpuMemoryStallWarnings(result.warnings)
     let ignoredChanged = false
     const retainedIgnoredIds = new Set(ignoredGpuMemoryStallWarningIds)
@@ -1091,7 +1091,7 @@ function App() {
     }
     if (ignoredChanged) {
       setIgnoredGpuMemoryStallWarningIds(retainedIgnoredIds)
-      localStorage.setItem('racktop.ignoredGpuMemoryStallWarnings.v1', JSON.stringify([...retainedIgnoredIds]))
+      localStorage.setItem('gpudeck.ignoredGpuMemoryStallWarnings.v1', JSON.stringify([...retainedIgnoredIds]))
     }
     for (const warning of result.warnings) {
       if (notifiedGpuMemoryStalls.current.has(warning.id)) continue
@@ -1173,7 +1173,7 @@ function App() {
   const ignoreGpuMemoryStallWarning = useCallback((warning: GpuMemoryStallWarning) => {
     setIgnoredGpuMemoryStallWarningIds((current) => {
       const next = new Set(current).add(warning.id)
-      localStorage.setItem('racktop.ignoredGpuMemoryStallWarnings.v1', JSON.stringify([...next]))
+      localStorage.setItem('gpudeck.ignoredGpuMemoryStallWarnings.v1', JSON.stringify([...next]))
       return next
     })
     setGpuMemoryStallWarnings((current) => current.filter((item) => item.id !== warning.id))
@@ -1184,7 +1184,7 @@ function App() {
     setIgnoredGpuMemoryStallWarningIds((current) => {
       const next = new Set(current)
       next.delete(warningId)
-      localStorage.setItem('racktop.ignoredGpuMemoryStallWarnings.v1', JSON.stringify([...next]))
+      localStorage.setItem('gpudeck.ignoredGpuMemoryStallWarnings.v1', JSON.stringify([...next]))
       return next
     })
     notifiedGpuMemoryStalls.current.delete(warningId)
@@ -1415,7 +1415,7 @@ function App() {
       })
       setMineProcessWarnings((current) => current.filter((warning) => warning.serverId !== server.id))
       for (const id of ignoredMineProcessWarningsRef.current) if (id.includes(`:${server.id}:`)) ignoredMineProcessWarningsRef.current.delete(id)
-      localStorage.setItem('racktop.ignoredMineProcessWarnings.v1', JSON.stringify([...ignoredMineProcessWarningsRef.current]))
+      localStorage.setItem('gpudeck.ignoredMineProcessWarnings.v1', JSON.stringify([...ignoredMineProcessWarningsRef.current]))
       for (const key of sharedGpuWatchesRef.current.keys()) if (key.startsWith(`${server.id}:`)) sharedGpuWatchesRef.current.delete(key)
       delete failureCounts.current[server.id]
       delete lastAttemptAt.current[server.id]
@@ -1632,12 +1632,12 @@ function App() {
         <div className="sidebar__titlebar" onMouseDown={startWindowDrag} onDoubleClick={(event) => void toggleWindowMaximize(event)}>
           <div className="traffic-spacer" aria-hidden="true" />
           <div className="brand-row">
-            <button className="brand" onClick={() => { setShowAbout(true); void checkForUpdates(true) }} aria-label="关于 RackTop">
+            <button className="brand" onClick={() => { setShowAbout(true); void checkForUpdates(true) }} aria-label="关于 GPUDeck">
               <span className="brand__mark"><Activity size={18} strokeWidth={2.4} /></span>
-              <div><strong>RackTop</strong><small>算力监控</small></div>
+              <div><strong>GPUDeck</strong><small>协作式 GPU 资源管理</small></div>
             </button>
             {checkingUpdate && <span className="brand__update brand__update--checking" aria-label="正在检查更新"><RefreshCw className="spin" size={15} /></span>}
-            {!checkingUpdate && shouldShowUpdateBadge(latestRelease?.version, ignoredUpdateVersion) && <button className="brand__update" onClick={() => void startAppUpdate()} aria-label={`下载并安装 RackTop ${latestRelease?.version}`} title={`更新到 RackTop ${latestRelease?.version}`}><CircleArrowUp size={16} /></button>}
+            {!checkingUpdate && shouldShowUpdateBadge(latestRelease?.version, ignoredUpdateVersion) && <button className="brand__update" onClick={() => void startAppUpdate()} aria-label={`下载并安装 GPUDeck ${latestRelease?.version}`} title={`更新到 GPUDeck ${latestRelease?.version}`}><CircleArrowUp size={16} /></button>}
           </div>
         </div>
         <nav className="primary-nav" aria-label="主导航">
@@ -1686,7 +1686,7 @@ function App() {
         <header className="topbar" onMouseDown={startWindowDrag} onDoubleClick={(event) => void toggleWindowMaximize(event)}>
           <div className="topbar__title">
             <p className="eyebrow">{mainView === 'hub-admin' ? 'Hub 系统管理' : mainView === 'hub-reservations' ? 'GPU 协作预约' : mainView === 'projects' ? '跨服务器文件同步' : mainView === 'idle' ? '资源发现' : mainView === 'mine' ? '当前用户任务' : mainView === 'fleet' ? `${totals.online} / ${servers.length} 台在线` : selectedServer ? selectedServer.host : '所有服务器'}</p>
-            <h1>{mainView === 'hub-admin' ? '管理面板' : mainView === 'hub-reservations' ? '预约日历' : mainView === 'projects' ? '我的项目' : mainView === 'idle' ? '寻找空闲算力' : mainView === 'mine' ? '我的进程' : mainView === 'fleet' ? '算力总览' : selectedServer ? serverDisplayName(selectedServer.name) : 'RackTop 总览'}</h1>
+            <h1>{mainView === 'hub-admin' ? '管理面板' : mainView === 'hub-reservations' ? '预约日历' : mainView === 'projects' ? '我的项目' : mainView === 'idle' ? '寻找空闲算力' : mainView === 'mine' ? '我的进程' : mainView === 'fleet' ? '算力总览' : selectedServer ? serverDisplayName(selectedServer.name) : 'GPUDeck 总览'}</h1>
           </div>
           <div className="topbar__actions">
             {(manualRefreshProgress || (remoteHistoryServerKey && remoteSyncStatus)) && <span className="remote-sync-slot">{manualRefreshProgress ? <span className="remote-sync-status remote-sync-status--syncing" role="status" aria-live="polite">正在刷新全部 · {manualRefreshProgress.completed}/{manualRefreshProgress.total} 台</span> : remoteSyncStatus && <RemoteSyncStatus status={remoteSyncStatus} onOpenFailure={() => {
@@ -1720,7 +1720,7 @@ function App() {
           ) : mainView === 'idle' ? (
             <IdleGpuView servers={servers} snapshots={snapshots} items={idleGpuItems} filters={idleFilters} currentReservation={currentIdleReservation} onFiltersChange={setIdleFilters} onReserve={() => setReservationEditor({ filters: { ...idleFilters }, reservation: currentIdleReservation })} sortRevision={manualRefreshRevision} onLaunch={(server, gpu) => { setManagedLaunchIntent({ id: crypto.randomUUID(), serverId: server.id, gpuUuid: gpu.uuid }); setMainView('mine') }} onQuickTerminal={(server, gpu) => setQuickTerminal({ server, gpu })} onSelect={(serverId, gpuUuid) => { setSelectedServerId(serverId); setSelectedGpuUuid(gpuUuid); setSelectedTab('gpu'); setMainView('server') }} onReserveGpu={(server, gpu) => setReservationEditor({ filters: { ...idleFilters, duration: 0, targetServerId: server.id, targetGpuUuid: gpu.uuid } })} />
           ) : mainView === 'mine' ? (
-            <ManagedProcessView servers={servers} snapshots={snapshots} projects={projects} warnings={mineProcessWarnings} launchIntent={managedLaunchIntent} onLaunchIntentConsumed={() => setManagedLaunchIntent(null)} onDismissWarning={(warningId) => { ignoredMineProcessWarningsRef.current.add(warningId); localStorage.setItem('racktop.ignoredMineProcessWarnings.v1', JSON.stringify([...ignoredMineProcessWarningsRef.current])); setMineProcessWarnings((current) => current.filter((warning) => warning.id !== warningId)) }} onOpenTerminal={(serverId) => { const server = servers.find((item) => item.id === serverId); if (server) setQuickTerminal({ server }) }} onNotice={setToast} onRefreshServer={(serverId) => refreshServer(serverId)} />
+            <ManagedProcessView servers={servers} snapshots={snapshots} projects={projects} warnings={mineProcessWarnings} launchIntent={managedLaunchIntent} onLaunchIntentConsumed={() => setManagedLaunchIntent(null)} onDismissWarning={(warningId) => { ignoredMineProcessWarningsRef.current.add(warningId); localStorage.setItem('gpudeck.ignoredMineProcessWarnings.v1', JSON.stringify([...ignoredMineProcessWarningsRef.current])); setMineProcessWarnings((current) => current.filter((warning) => warning.id !== warningId)) }} onOpenTerminal={(serverId) => { const server = servers.find((item) => item.id === serverId); if (server) setQuickTerminal({ server }) }} onNotice={setToast} onRefreshServer={(serverId) => refreshServer(serverId)} />
           ) : mainView === 'fleet' ? (
             <FleetOverview onboarding={<OnboardingChecklist steps={onboardingSteps} previewStep={onboardingPreviewStep} collapsed={onboardingCollapsed} dismissed={onboardingDismissed} useActualState={onboardingUseActualState} showPreviewControls={!api.isDesktop} onPreviewStepChange={setOnboardingPreviewStep} onCollapsedChange={setOnboardingCollapsed} onDismiss={() => { localStorage.setItem(ONBOARDING_DISMISSED_KEY, 'true'); setOnboardingDismissed(true); setToast('已隐藏新手引导，可在“设置 → 通用”中重新显示') }} onUseActualStateChange={setOnboardingUseActualState} />} servers={servers} snapshots={snapshots} settings={settings} totals={totals} sort={fleetSort} descending={fleetDescending} onSort={(next) => { setFleetSortMode('manual'); setFleetSort(next) }} onToggleOrder={() => { setFleetSortMode('manual'); setFleetDescending((value) => !value) }} onSelect={(serverId, tab, gpuUuid) => { setSelectedServerId(serverId); setSelectedGpuUuid(gpuUuid ?? null); setSelectedTab(tab); setMainView('server') }} onContextMenu={openServerContextMenu} />
           ) : selectedServer && selectedSnapshot && canDisplayServerDetails(selectedServer.status, true) ? (
@@ -1792,7 +1792,7 @@ export function EmptyState({ onboarding, onAdd, onImport }: { onboarding?: React
       <div className="empty-state">
         <span className="empty-state__icon"><ServerIcon size={28} /></span>
         <h2>连接第一台服务器</h2>
-        <p>添加 SSH 主机或导入现有 OpenSSH Config，RackTop 会自动采集 GPU / NPU / PPU、CPU、内存和进程指标。</p>
+        <p>添加 SSH 主机或导入现有 OpenSSH Config，GPUDeck 会自动采集 GPU / NPU / PPU、CPU、内存和进程指标。</p>
         <div><button className="button button--primary" onClick={onAdd}><Plus size={17} />添加服务器</button><button className="button button--secondary" onClick={onImport}><Download size={17} />导入配置</button></div>
       </div>
     </div>
@@ -2181,7 +2181,7 @@ export function HistoryView({ server, snapshot }: { server: Server; snapshot: Sn
     <section className="history-section"><header className="history-page__header"><div><History size={18} /><span><h2>资源热力图</h2><p>每列 1 天，每格汇总连续 3 小时的平均使用率</p></span></div><small>最近 {Math.min(90, Math.max(1, server.historyRetentionDays))} 天</small></header>{heatmapError ? <div className="history-page__state history-page__state--error"><AlertCircle size={16} />资源历史读取失败：{heatmapError}</div> : heatmapPoints.length === 0 ? <div className="history-page__state" role="status"><LoaderCircle className="spin" size={16} />正在读取资源趋势…</div> : <HistoryHeatmaps snapshot={snapshot} points={heatmapPoints} retentionDays={server.historyRetentionDays} />}</section>
     <section className="history-section"><header className="history-page__header"><div><History size={18} /><span><h2>{accelerator} 使用分布</h2><p>按 Unix 用户聚合活跃时间与显存积分</p></span></div><div className="usage-range" aria-label="使用分布时间范围">{([7, 15, 30, 90] as const).map((days) => <button key={days} aria-pressed={usageDays === days} onClick={() => setUsageDays(days)}>{days === 7 ? '1 周' : days === 15 ? '半个月' : days === 30 ? '1 个月' : '3 个月'}</button>)}</div></header>{usageError ? <div className="history-page__state history-page__state--error"><AlertCircle size={16} />使用分布读取失败：{usageError}</div> : usage === null ? <div className="history-page__state" role="status"><LoaderCircle className="spin" size={16} />正在统计使用分布…</div> : <UsageDistribution snapshot={snapshot} data={displayedUsage} />}</section>
     <section className="history-section"><header className="history-page__header"><div><HardDrive size={18} /><span><h2>存储空间</h2><p>服务器磁盘占用情况，区分当前用户、其他用户与空闲空间</p></span></div></header><StorageWaffleList disks={snapshot.disks ?? []} /></section>
-    <section className="data-retention"><Database size={18} /><div><strong>{server.remoteHistoryEnabled ? '在线本地采样 · 离线远端补档' : '仅在线本地采样'}</strong><p>{server.remoteHistoryEnabled ? 'RackTop 在线时写入本机时间桶；远端隐藏进程仅在 App 离线后接管，重新打开时增量补齐缺口。' : 'RackTop 运行时在本机生成使用分布；App 离线期间不补零，缺失时段保持灰色。'}不会保存 PID、进程命令、路径或终端输入输出。</p></div></section>
+    <section className="data-retention"><Database size={18} /><div><strong>{server.remoteHistoryEnabled ? '在线本地采样 · 离线远端补档' : '仅在线本地采样'}</strong><p>{server.remoteHistoryEnabled ? 'GPUDeck 在线时写入本机时间桶；远端隐藏进程仅在 App 离线后接管，重新打开时增量补齐缺口。' : 'GPUDeck 运行时在本机生成使用分布；App 离线期间不补零，缺失时段保持灰色。'}不会保存 PID、进程命令、路径或终端输入输出。</p></div></section>
   </div>
 }
 
@@ -2271,7 +2271,7 @@ function ConnectionView({ server, snapshot, nvidiaWarningIgnored, ignoredGpuMemo
   const canRestoreNvidiaWarning = nvidiaWarningIgnored && snapshot.nvidiaSmi !== 'available'
   const ignoredMemoryWarnings = ignoredGpuMemoryStallGpus(server.id, snapshot, ignoredGpuMemoryStallWarningIds)
   const ignoredCount = ignoredMemoryWarnings.length + (canRestoreNvidiaWarning ? 1 : 0)
-  return <div className="content-stack"><section className="panel connection-panel"><PanelHeader icon={<KeyRound />} title="SSH 连接" subtitle="认证信息仅在本机使用" /><dl className="definition-list"><div><dt>物理位置</dt><dd>{server.location || '未填写'}</dd></div><div><dt>连接地址</dt><dd className="mono">{server.username}@{server.host}:{server.port}</dd></div><div><dt>认证</dt><dd>{isRackTopManagedIdentity(server.identityFile) ? 'RackTop 专用密钥' : server.authMethod === 'sshAgent' ? 'SSH Agent / 默认密钥' : server.authMethod === 'privateKey' ? '指定私钥' : server.authMethod === 'sshConfig' ? 'SSH Config' : '系统钥匙串密码'}</dd></div><div><dt>SSH Config</dt><dd>{server.sshAlias || '未使用别名'}</dd></div><div><dt>私钥</dt><dd className="mono">{server.identityFile || '由 OpenSSH 自动选择'}</dd></div><div><dt>ProxyJump</dt><dd className="mono">{server.proxyJump || '无'}</dd></div><div><dt>远端历史</dt><dd>{server.remoteHistoryEnabled ? `已启用 · ${server.remoteHistoryLastSyncAt ? `同步于 ${relativeTime(server.remoteHistoryLastSyncAt)}` : '等待首次同步'}` : '未启用'}</dd></div></dl><div className="panel__actions"><button className="button button--primary" onClick={onRefresh} disabled={isRefreshing}><RefreshCw size={16} className={isRefreshing ? 'spin' : ''} />测试并重新连接</button><button className="button button--secondary" onClick={onEdit}><Settings size={16} />编辑配置</button></div></section>{ignoredCount > 0 && <section className="panel ignored-warning-list"><PanelHeader icon={<BellOff />} title={`已忽略的 ${accelerator} 提醒`} subtitle={`${ignoredCount} 项提醒仅在此处保留`} /><div>{canRestoreNvidiaWarning && <div className="ignored-warning-row"><div><strong>GPU 读取异常</strong><p>不可读取的显卡仍会显示，但服务器状态暂按在线处理。</p></div><button className="button button--secondary button--small" onClick={onRestoreNvidiaWarning}><Bell size={14} />恢复提醒</button></div>}{ignoredMemoryWarnings.map((gpu) => <div className="ignored-warning-row" key={gpu.uuid}><div><strong>{accelerator} {gpu.index} · {gpu.name.replace(/^NVIDIA\s+/i, '')} 显存占用预警</strong><p>当前占用 {(gpu.memoryUsedMb / 1024).toFixed(1)} / {(gpu.memoryTotalMb / 1024).toFixed(1)} GB，UTL {clampPercent(gpu.utilization).toFixed(0)}%。</p></div><button className="button button--secondary button--small" onClick={() => onRestoreGpuMemoryStallWarning(`gpu-memory-stall:${server.id}:${gpu.uuid}`)}><Bell size={14} />恢复提醒</button></div>)}</div></section>}<ServerNotificationSettingsMenu settings={notificationSettings} onChange={onNotificationSettingsChange} openRequested={notificationMenuRequested} onOpenRequestHandled={onNotificationMenuRequestHandled} /><section className="panel danger-zone"><div><strong>删除服务器</strong><p>删除本机记录、历史数据、远端采集进程和服务器用户目录中的 RackTop 数据。</p></div><button className="button button--danger" onClick={onDelete}><Trash2 size={16} />删除</button></section></div>
+  return <div className="content-stack"><section className="panel connection-panel"><PanelHeader icon={<KeyRound />} title="SSH 连接" subtitle="认证信息仅在本机使用" /><dl className="definition-list"><div><dt>物理位置</dt><dd>{server.location || '未填写'}</dd></div><div><dt>连接地址</dt><dd className="mono">{server.username}@{server.host}:{server.port}</dd></div><div><dt>认证</dt><dd>{isGPUDeckManagedIdentity(server.identityFile) ? 'GPUDeck 专用密钥' : server.authMethod === 'sshAgent' ? 'SSH Agent / 默认密钥' : server.authMethod === 'privateKey' ? '指定私钥' : server.authMethod === 'sshConfig' ? 'SSH Config' : '系统钥匙串密码'}</dd></div><div><dt>SSH Config</dt><dd>{server.sshAlias || '未使用别名'}</dd></div><div><dt>私钥</dt><dd className="mono">{server.identityFile || '由 OpenSSH 自动选择'}</dd></div><div><dt>ProxyJump</dt><dd className="mono">{server.proxyJump || '无'}</dd></div><div><dt>远端历史</dt><dd>{server.remoteHistoryEnabled ? `已启用 · ${server.remoteHistoryLastSyncAt ? `同步于 ${relativeTime(server.remoteHistoryLastSyncAt)}` : '等待首次同步'}` : '未启用'}</dd></div></dl><div className="panel__actions"><button className="button button--primary" onClick={onRefresh} disabled={isRefreshing}><RefreshCw size={16} className={isRefreshing ? 'spin' : ''} />测试并重新连接</button><button className="button button--secondary" onClick={onEdit}><Settings size={16} />编辑配置</button></div></section>{ignoredCount > 0 && <section className="panel ignored-warning-list"><PanelHeader icon={<BellOff />} title={`已忽略的 ${accelerator} 提醒`} subtitle={`${ignoredCount} 项提醒仅在此处保留`} /><div>{canRestoreNvidiaWarning && <div className="ignored-warning-row"><div><strong>GPU 读取异常</strong><p>不可读取的显卡仍会显示，但服务器状态暂按在线处理。</p></div><button className="button button--secondary button--small" onClick={onRestoreNvidiaWarning}><Bell size={14} />恢复提醒</button></div>}{ignoredMemoryWarnings.map((gpu) => <div className="ignored-warning-row" key={gpu.uuid}><div><strong>{accelerator} {gpu.index} · {gpu.name.replace(/^NVIDIA\s+/i, '')} 显存占用预警</strong><p>当前占用 {(gpu.memoryUsedMb / 1024).toFixed(1)} / {(gpu.memoryTotalMb / 1024).toFixed(1)} GB，UTL {clampPercent(gpu.utilization).toFixed(0)}%。</p></div><button className="button button--secondary button--small" onClick={() => onRestoreGpuMemoryStallWarning(`gpu-memory-stall:${server.id}:${gpu.uuid}`)}><Bell size={14} />恢复提醒</button></div>)}</div></section>}<ServerNotificationSettingsMenu settings={notificationSettings} onChange={onNotificationSettingsChange} openRequested={notificationMenuRequested} onOpenRequestHandled={onNotificationMenuRequestHandled} /><section className="panel danger-zone"><div><strong>删除服务器</strong><p>删除本机记录、历史数据、远端采集进程和服务器用户目录中的 GPUDeck 数据。</p></div><button className="button button--danger" onClick={onDelete}><Trash2 size={16} />删除</button></section></div>
 }
 
 function NvidiaWarning({ snapshot, onRefresh, onIgnore }: { snapshot: Snapshot; onRefresh: () => void; onIgnore: () => void }) {
@@ -2284,7 +2284,7 @@ function NvidiaWarning({ snapshot, onRefresh, onIgnore }: { snapshot: Snapshot; 
     try { await navigator.clipboard.writeText(command); setMessage('安装命令已复制') } catch { setMessage('无法访问剪贴板，请手动选择命令复制') }
   }
   const install = async () => {
-    if (!window.confirm(`RackTop 将在 ${snapshot.osName} 上安装 NVIDIA 驱动包。继续吗？`)) return
+    if (!window.confirm(`GPUDeck 将在 ${snapshot.osName} 上安装 NVIDIA 驱动包。继续吗？`)) return
     if (!window.confirm('该操作会通过 sudo 修改服务器软件包，且可能需要重启。确认执行？')) return
     setWorking(true)
     try { setMessage(await api.installNvidiaDriver(snapshot.serverId)) } catch (error) { setMessage(String(error)) } finally { setWorking(false) }
@@ -2689,7 +2689,7 @@ function AboutSheet({ latestRelease, checkingUpdate, updateError, ignoredVersion
   }
   const ignored = Boolean(latestRelease && latestRelease.version === ignoredVersion)
   const updateStatus = checkingUpdate ? '正在检查 GitHub Releases…' : updateError ? `检查失败：${updateError}` : latestRelease ? `发现新版本 v${latestRelease.version}${ignored ? ' · 已忽略此版本提醒' : ''}` : '当前已是最新版本'
-  return <div className="scrim" onMouseDown={(event) => event.target === event.currentTarget && onClose()}><section className="sheet about-sheet" role="dialog" aria-modal="true" aria-labelledby="about-title"><header className="sheet__header"><div><p className="eyebrow">About</p><h2 id="about-title">RackTop</h2></div><button className="icon-button" onClick={onClose} aria-label="关闭"><X size={18} /></button></header><div className="about-body"><div className="about-product"><span className="about-product__mark"><Activity size={28} /></span><div><strong>RackTop {packageInfo.version}</strong><p>面向共享算力服务器的安静、实时资源监控与 SSH 工作台。</p></div></div><div className="about-update" role="status"><span className={latestRelease && !ignored ? 'is-new' : ''}>{checkingUpdate ? <RefreshCw className="spin" size={17} /> : <CircleArrowUp size={17} />}</span><div><strong>版本更新</strong><small>{updateStatus}</small></div><div className="about-update__actions">{latestRelease && !checkingUpdate ? <><button className="button button--secondary button--small" onClick={() => openExternal(latestRelease.url)}>查看版本<ExternalLink size={11} /></button>{!ignored && <button className="button button--quiet button--small" onClick={() => onIgnoreUpdate(latestRelease.version)}>忽略此版本</button>}</> : <><button className="button button--secondary button--small" onClick={() => openExternal(releaseUrl(packageInfo.version))}>版本说明</button><button className="button button--secondary button--small" disabled={checkingUpdate} onClick={onCheckUpdate}>{checkingUpdate ? '检查中…' : '重新检查'}</button></>}</div></div><div className="about-author"><img src={authorAvatar} alt="Tongzh-SEU 头像" /><div><strong>Tongzh-SEU</strong><small>作者与维护者</small><div className="about-author__links"><button className="about-external-link" onClick={() => openExternal('https://github.com/Tongzh-SEU')}><Github size={13} />GitHub @Tongzh-SEU<ExternalLink size={11} /></button><button className="about-external-link" onClick={() => openExternal('https://xhslink.cn/o/AsgFqJMZfR5')}>小红书 @tooongtooong<ExternalLink size={11} /></button></div></div></div><div className="about-links"><button onClick={() => openExternal('https://github.com/Tongzh-SEU/RackTop')}><Github size={15} /><span><strong>GitHub 仓库</strong><small>Tongzh-SEU/RackTop</small></span><ExternalLink size={13} /></button><button aria-expanded={licenses} aria-controls="about-licenses" onClick={() => setLicenses((value) => !value)}><Database size={15} /><span><strong>第三方许可</strong><small>{licenses ? '收起开源组件' : '查看主要运行时依赖'}</small></span><ChevronRight className={`disclosure-icon${licenses ? ' disclosure-icon--expanded' : ''}`} size={13} /></button></div>{licenses && <div className="about-licenses" id="about-licenses"><p><strong>React、Tauri、xterm.js、ECharts、Lucide</strong></p><p>各组件版权归其贡献者所有，并按各自开源许可证分发。完整版本与传递依赖记录见应用包内的 npm 与 Cargo 锁文件。</p></div>}<small className="about-contact">联系：通过 GitHub Issues 或作者主页发起讨论</small></div><footer className="sheet__footer"><button className="button button--primary" onClick={onClose}>完成</button></footer></section></div>
+  return <div className="scrim" onMouseDown={(event) => event.target === event.currentTarget && onClose()}><section className="sheet about-sheet" role="dialog" aria-modal="true" aria-labelledby="about-title"><header className="sheet__header"><div><p className="eyebrow">About</p><h2 id="about-title">GPUDeck</h2></div><button className="icon-button" onClick={onClose} aria-label="关闭"><X size={18} /></button></header><div className="about-body"><div className="about-product"><span className="about-product__mark"><Activity size={28} /></span><div><strong>GPUDeck {packageInfo.version}</strong><p>面向共享算力服务器的安静、实时资源监控与 SSH 工作台。</p></div></div><div className="about-update" role="status"><span className={latestRelease && !ignored ? 'is-new' : ''}>{checkingUpdate ? <RefreshCw className="spin" size={17} /> : <CircleArrowUp size={17} />}</span><div><strong>版本更新</strong><small>{updateStatus}</small></div><div className="about-update__actions">{latestRelease && !checkingUpdate ? <><button className="button button--secondary button--small" onClick={() => openExternal(latestRelease.url)}>查看版本<ExternalLink size={11} /></button>{!ignored && <button className="button button--quiet button--small" onClick={() => onIgnoreUpdate(latestRelease.version)}>忽略此版本</button>}</> : <><button className="button button--secondary button--small" onClick={() => openExternal(releaseUrl(packageInfo.version))}>版本说明</button><button className="button button--secondary button--small" disabled={checkingUpdate} onClick={onCheckUpdate}>{checkingUpdate ? '检查中…' : '重新检查'}</button></>}</div></div><div className="about-author"><img src={authorAvatar} alt="Tongzh-SEU 头像" /><div><strong>Tongzh-SEU</strong><small>作者与维护者</small><div className="about-author__links"><button className="about-external-link" onClick={() => openExternal('https://github.com/Tongzh-SEU')}><Github size={13} />GitHub @Tongzh-SEU<ExternalLink size={11} /></button><button className="about-external-link" onClick={() => openExternal('https://xhslink.cn/o/AsgFqJMZfR5')}>小红书 @tooongtooong<ExternalLink size={11} /></button></div></div></div><div className="about-links"><button onClick={() => openExternal('https://github.com/leeechsh/gpudeck')}><Github size={15} /><span><strong>GitHub 仓库</strong><small>leeechsh/gpudeck</small></span><ExternalLink size={13} /></button><button aria-expanded={licenses} aria-controls="about-licenses" onClick={() => setLicenses((value) => !value)}><Database size={15} /><span><strong>第三方许可</strong><small>{licenses ? '收起开源组件' : '查看主要运行时依赖'}</small></span><ChevronRight className={`disclosure-icon${licenses ? ' disclosure-icon--expanded' : ''}`} size={13} /></button></div>{licenses && <div className="about-licenses" id="about-licenses"><p><strong>React、Tauri、xterm.js、ECharts、Lucide</strong></p><p>各组件版权归其贡献者所有，并按各自开源许可证分发。完整版本与传递依赖记录见应用包内的 npm 与 Cargo 锁文件。</p></div>}<small className="about-contact">联系：通过 GitHub Issues 或作者主页发起讨论</small></div><footer className="sheet__footer"><button className="button button--primary" onClick={onClose}>完成</button></footer></section></div>
 }
 
 function SshImportSheet({ drafts, servers, onClose, onImport }: { drafts: ServerDraft[]; servers: Server[]; onClose: () => void; onImport: (drafts: ServerDraft[]) => Promise<void> }) {
@@ -2723,7 +2723,7 @@ function TerminateProcessDialog({ target, onClose, onTerminate }: { target: Proc
 
 function HostKeyDialog({ info, onClose, onTrust }: { info: HostKeyInfo; onClose: () => void; onTrust: () => Promise<void> }) {
   const [saving, setSaving] = useState(false)
-  return <div className="scrim"><section className={`sheet host-key-sheet ${info.changed ? 'host-key-sheet--changed' : ''}`} role="alertdialog" aria-modal="true" aria-labelledby="host-key-title"><header className="sheet__header"><div><p className="eyebrow">{info.changed ? 'SSH 安全警告' : '首次 SSH 连接'}</p><h2 id="host-key-title">{info.changed ? '服务器 Host Key 已变化' : '核对服务器指纹'}</h2></div><button className="icon-button" onClick={onClose} aria-label="关闭"><X size={18} /></button></header><div className="host-key-body"><span className="host-key-icon"><ShieldAlert size={26} /></span><p>{info.changed ? <>RackTop 检测到 <strong>{info.host}</strong> 的密钥与本机记录不一致。这可能是服务器重装，也可能是中间人攻击。</> : <>这是 RackTop 第一次连接 <strong>{info.host}</strong>。请通过可信渠道与服务器管理员核对以下指纹。</>}</p><div className="fingerprint"><small>{info.algorithm}</small><code>{info.fingerprint}</code></div><p className="host-key-note">{info.changed ? '连接已被阻止。请先通过独立可信渠道核实新指纹，再使用系统 ssh-keygen 手动移除旧记录；RackTop 不会覆盖现有密钥。' : '只有在确认指纹一致后才继续。RackTop 不会自动接受未知 Host Key。'}</p></div><footer className="sheet__footer"><button className="button button--secondary" onClick={onClose}>{info.changed ? '保持阻止' : '取消连接'}</button>{!info.changed && <button className="button button--primary" disabled={saving} onClick={async () => { setSaving(true); try { await onTrust() } finally { setSaving(false) } }}>{saving ? '保存中…' : '指纹一致，信任并连接'}</button>}</footer></section></div>
+  return <div className="scrim"><section className={`sheet host-key-sheet ${info.changed ? 'host-key-sheet--changed' : ''}`} role="alertdialog" aria-modal="true" aria-labelledby="host-key-title"><header className="sheet__header"><div><p className="eyebrow">{info.changed ? 'SSH 安全警告' : '首次 SSH 连接'}</p><h2 id="host-key-title">{info.changed ? '服务器 Host Key 已变化' : '核对服务器指纹'}</h2></div><button className="icon-button" onClick={onClose} aria-label="关闭"><X size={18} /></button></header><div className="host-key-body"><span className="host-key-icon"><ShieldAlert size={26} /></span><p>{info.changed ? <>GPUDeck 检测到 <strong>{info.host}</strong> 的密钥与本机记录不一致。这可能是服务器重装，也可能是中间人攻击。</> : <>这是 GPUDeck 第一次连接 <strong>{info.host}</strong>。请通过可信渠道与服务器管理员核对以下指纹。</>}</p><div className="fingerprint"><small>{info.algorithm}</small><code>{info.fingerprint}</code></div><p className="host-key-note">{info.changed ? '连接已被阻止。请先通过独立可信渠道核实新指纹，再使用系统 ssh-keygen 手动移除旧记录；GPUDeck 不会覆盖现有密钥。' : '只有在确认指纹一致后才继续。GPUDeck 不会自动接受未知 Host Key。'}</p></div><footer className="sheet__footer"><button className="button button--secondary" onClick={onClose}>{info.changed ? '保持阻止' : '取消连接'}</button>{!info.changed && <button className="button button--primary" disabled={saving} onClick={async () => { setSaving(true); try { await onTrust() } finally { setSaving(false) } }}>{saving ? '保存中…' : '指纹一致，信任并连接'}</button>}</footer></section></div>
 }
 
 export default App

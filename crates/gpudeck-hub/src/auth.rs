@@ -23,6 +23,7 @@ pub struct AuthUser {
     pub wecom_user_id: Option<String>,
     pub role: String,
     pub concurrent_gpu_limit: i32,
+    pub must_change_password: bool,
     pub csrf_token: String,
 }
 
@@ -57,11 +58,11 @@ impl FromRequestParts<Arc<AppState>> for AuthUser {
         let token = cookie
             .split(';')
             .map(str::trim)
-            .find_map(|item| item.strip_prefix("racktop_session="))
+            .find_map(|item| item.strip_prefix("gpudeck_session="))
             .ok_or_else(|| ApiError(StatusCode::UNAUTHORIZED, "请先登录".into()))?;
         let token_hash = sha256(token);
         let row = sqlx::query(
-            "SELECT u.id,u.username,u.display_name,u.linux_username,u.wecom_user_id,u.role,u.concurrent_gpu_limit,s.csrf_token
+            "SELECT u.id,u.username,u.display_name,u.linux_username,u.wecom_user_id,u.role,u.concurrent_gpu_limit,u.must_change_password,s.csrf_token
              FROM sessions s JOIN users u ON u.id=s.user_id
              WHERE s.token_hash=$1 AND s.expires_at>now() AND s.last_seen_at>now()-interval '12 hours' AND u.enabled=true"
         ).bind(token_hash).fetch_optional(&state.pool).await?
@@ -70,6 +71,10 @@ impl FromRequestParts<Arc<AppState>> for AuthUser {
             .bind(sha256(token))
             .execute(&state.pool)
             .await?;
+        let must_change_password: bool = row.get("must_change_password");
+        if must_change_password && !password_setup_path(parts.uri.path()) {
+            return Err(ApiError(StatusCode::FORBIDDEN, "请先修改初始密码".into()));
+        }
         Ok(Self {
             id: row.get("id"),
             username: row.get("username"),
@@ -78,8 +83,29 @@ impl FromRequestParts<Arc<AppState>> for AuthUser {
             wecom_user_id: row.get("wecom_user_id"),
             role: row.get("role"),
             concurrent_gpu_limit: row.get("concurrent_gpu_limit"),
+            must_change_password,
             csrf_token: row.get("csrf_token"),
         })
+    }
+}
+
+fn password_setup_path(path: &str) -> bool {
+    path.ends_with("/auth/me")
+        || path.ends_with("/auth/change-password")
+        || path.ends_with("/auth/logout")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::password_setup_path;
+
+    #[test]
+    fn only_password_setup_routes_are_available_before_password_change() {
+        assert!(password_setup_path("/api/v1/auth/me"));
+        assert!(password_setup_path("/api/v1/auth/change-password"));
+        assert!(password_setup_path("/api/v1/auth/logout"));
+        assert!(!password_setup_path("/api/v1/resources"));
+        assert!(!password_setup_path("/api/v1/admin/users"));
     }
 }
 
@@ -111,12 +137,12 @@ pub async fn bootstrap_admin(pool: &PgPool) -> anyhow::Result<()> {
     if count > 0 {
         return Ok(());
     }
-    let username = env::var("RACKTOP_BOOTSTRAP_ADMIN").unwrap_or_else(|_| "admin".into());
-    let password = match env::var("RACKTOP_BOOTSTRAP_PASSWORD") {
+    let username = env::var("GPUDECK_BOOTSTRAP_ADMIN").unwrap_or_else(|_| "admin".into());
+    let password = match env::var("GPUDECK_BOOTSTRAP_PASSWORD") {
         Ok(password) => password,
         Err(_) => {
-            let path = env::var("RACKTOP_BOOTSTRAP_PASSWORD_FILE").map_err(|_| {
-                anyhow::anyhow!("RACKTOP_BOOTSTRAP_PASSWORD or RACKTOP_BOOTSTRAP_PASSWORD_FILE is required for first start")
+            let path = env::var("GPUDECK_BOOTSTRAP_PASSWORD_FILE").map_err(|_| {
+                anyhow::anyhow!("GPUDECK_BOOTSTRAP_PASSWORD or GPUDECK_BOOTSTRAP_PASSWORD_FILE is required for first start")
             })?;
             std::fs::read_to_string(path)?.trim().to_string()
         }

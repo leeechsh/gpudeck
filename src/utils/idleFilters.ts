@@ -3,7 +3,7 @@ import { clampPercent, gpuMemoryPercent, hasOtherUserGpuWorkload, isGpuAvailable
 
 export type IdleFilters = IdleReservationFilters
 
-export const IDLE_FILTERS_STORAGE_KEY = 'racktop.idleFilters.v1'
+export const IDLE_FILTERS_STORAGE_KEY = 'gpudeck.idleFilters.v1'
 export const DEFAULT_IDLE_FILTERS: IdleFilters = {
   gpuMemoryGb: 0,
   cpuMemoryGb: 0,

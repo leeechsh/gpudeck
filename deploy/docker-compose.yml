@@ -2,7 +2,7 @@ services:
   secrets-init:
     image: alpine:3.22
     restart: "no"
-    volumes: [racktop-secrets:/secrets]
+    volumes: [gpudeck-secrets:/secrets]
     command:
       - /bin/sh
       - -ec
@@ -12,24 +12,24 @@ services:
         test -s /secrets/admin_password || head -c 24 /dev/urandom | base64 > /secrets/admin_password
         chown 65532:65532 /secrets/postgres_password /secrets/admin_password
         chmod 0400 /secrets/postgres_password /secrets/admin_password
-  postgres:
+  gpudeck-postgres:
     image: postgres:17-alpine
     restart: unless-stopped
     environment:
-      POSTGRES_DB: racktop
-      POSTGRES_USER: racktop
-      POSTGRES_PASSWORD_FILE: /run/racktop-secrets/postgres_password
+      POSTGRES_DB: gpudeck
+      POSTGRES_USER: gpudeck
+      POSTGRES_PASSWORD_FILE: /run/gpudeck-secrets/postgres_password
     volumes:
-      - racktop-postgres:/var/lib/postgresql/data
-      - racktop-secrets:/run/racktop-secrets:ro
+      - gpudeck-postgres:/var/lib/postgresql/data
+      - gpudeck-secrets:/run/gpudeck-secrets:ro
     depends_on:
       secrets-init: { condition: service_completed_successfully }
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U racktop"]
+      test: ["CMD-SHELL", "pg_isready -U gpudeck"]
       interval: 10s
       timeout: 5s
       retries: 10
-  hub:
+  gpudeck-hub:
     build:
       context: ..
       dockerfile: deploy/Dockerfile.hub
@@ -38,25 +38,25 @@ services:
       - path: .env
         required: false
     environment:
-      RACKTOP_BOOTSTRAP_PASSWORD_FILE: /run/racktop-secrets/admin_password
+      GPUDECK_BOOTSTRAP_PASSWORD_FILE: /run/gpudeck-secrets/admin_password
     volumes:
-      - racktop-secrets:/run/racktop-secrets:ro
+      - gpudeck-secrets:/run/gpudeck-secrets:ro
     depends_on:
-      postgres: { condition: service_healthy }
-  web:
+      gpudeck-postgres: { condition: service_healthy }
+  gpudeck-web:
     build:
       context: ..
       dockerfile: deploy/Dockerfile.web
     restart: unless-stopped
     environment:
-      RACKTOP_SITE_ADDRESS: ${RACKTOP_SITE_ADDRESS:-http://:80}
-    ports: ["${RACKTOP_BIND_ADDRESS:-127.0.0.1}:${RACKTOP_HTTP_PORT:-37935}:80"]
+      GPUDECK_SITE_ADDRESS: ${GPUDECK_SITE_ADDRESS:-http://:80}
+    ports: ["${GPUDECK_BIND_ADDRESS:-127.0.0.1}:${GPUDECK_HTTP_PORT:-37935}:80"]
     volumes:
       - caddy-data:/data
       - caddy-config:/config
-    depends_on: [hub]
+    depends_on: [gpudeck-hub]
 volumes:
-  racktop-postgres:
-  racktop-secrets:
+  gpudeck-postgres:
+  gpudeck-secrets:
   caddy-data:
   caddy-config:

@@ -10,7 +10,7 @@ use axum::{
     routing::{get, post},
 };
 use chrono::{DateTime, Duration, Timelike, Utc};
-use racktop_domain::{AgentSnapshot, CreateReservation, ReservationView};
+use gpudeck_domain::{AgentSnapshot, CreateReservation, ReservationView};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use sqlx::{Postgres, Row, Transaction};
@@ -25,6 +25,7 @@ pub fn router() -> Router<Arc<AppState>> {
         .route("/auth/login", post(login))
         .route("/auth/logout", post(logout))
         .route("/auth/me", get(me))
+        .route("/auth/change-password", post(change_password))
         .route("/resources", get(resources))
         .route(
             "/reservations",
@@ -37,6 +38,7 @@ pub fn router() -> Router<Arc<AppState>> {
         .route("/agent/snapshot", post(agent_snapshot))
         .route("/admin/nodes", get(list_nodes).post(create_node))
         .route("/admin/users", get(list_users).post(create_user))
+        .route("/admin/users/sync", post(sync_system_users))
 }
 
 #[derive(Deserialize)]
@@ -97,7 +99,7 @@ async fn login(
     response.headers_mut().insert(
         header::SET_COOKIE,
         HeaderValue::from_str(&format!(
-            "racktop_session={token}; Path=/; HttpOnly{secure}; SameSite=Lax; Max-Age=604800"
+            "gpudeck_session={token}; Path=/; HttpOnly{secure}; SameSite=Lax; Max-Age=604800"
         ))
         .unwrap(),
     );
@@ -121,7 +123,7 @@ async fn logout(
     response.headers_mut().insert(
         header::SET_COOKIE,
         HeaderValue::from_str(&format!(
-            "racktop_session=; Path=/; HttpOnly{secure}; SameSite=Lax; Max-Age=0"
+            "gpudeck_session=; Path=/; HttpOnly{secure}; SameSite=Lax; Max-Age=0"
         ))
         .unwrap(),
     );
@@ -130,6 +132,43 @@ async fn logout(
 
 async fn me(user: AuthUser) -> Json<Value> {
     Json(json!(user))
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ChangePassword {
+    current_password: String,
+    new_password: String,
+}
+
+async fn change_password(
+    State(state): State<Arc<AppState>>,
+    user: AuthUser,
+    headers: HeaderMap,
+    Json(input): Json<ChangePassword>,
+) -> Result<StatusCode, ApiError> {
+    user.require_csrf(&headers)?;
+    if input.new_password.len() < 12 {
+        return Err(ApiError(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "新密码至少12字符".into(),
+        ));
+    }
+    let hash: String = sqlx::query_scalar("SELECT password_hash FROM users WHERE id=$1")
+        .bind(user.id)
+        .fetch_one(&state.pool)
+        .await?;
+    if !auth::verify_password(&input.current_password, &hash) {
+        return Err(ApiError(StatusCode::UNAUTHORIZED, "当前密码错误".into()));
+    }
+    let new_hash = auth::hash_password(&input.new_password)
+        .map_err(|_| ApiError(StatusCode::INTERNAL_SERVER_ERROR, "密码处理失败".into()))?;
+    sqlx::query("UPDATE users SET password_hash=$2,must_change_password=false WHERE id=$1")
+        .bind(user.id)
+        .bind(new_hash)
+        .execute(&state.pool)
+        .await?;
+    Ok(StatusCode::NO_CONTENT)
 }
 
 async fn resources(
@@ -387,10 +426,16 @@ struct CreateNode {
 
 fn validate_node_registration(name: &str, hostname: &str) -> Result<(), ApiError> {
     if name.trim().is_empty() || hostname.trim().is_empty() {
-        return Err(ApiError(StatusCode::UNPROCESSABLE_ENTITY, "节点名称和主机名不能为空".into()));
+        return Err(ApiError(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "节点名称和主机名不能为空".into(),
+        ));
     }
     if name.trim().len() > 120 || hostname.trim().len() > 255 {
-        return Err(ApiError(StatusCode::UNPROCESSABLE_ENTITY, "节点名称或主机名过长".into()));
+        return Err(ApiError(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "节点名称或主机名过长".into(),
+        ));
     }
     Ok(())
 }
@@ -420,8 +465,13 @@ async fn create_node(
     user.require_csrf(&headers)?;
     validate_node_registration(&input.name, &input.hostname)?;
     let name = input.name.trim();
-    if sqlx::query_scalar::<_, bool>("SELECT EXISTS(SELECT 1 FROM nodes WHERE lower(name)=lower($1))")
-        .bind(name).fetch_one(&state.pool).await? {
+    if sqlx::query_scalar::<_, bool>(
+        "SELECT EXISTS(SELECT 1 FROM nodes WHERE lower(name)=lower($1))",
+    )
+    .bind(name)
+    .fetch_one(&state.pool)
+    .await?
+    {
         return Err(ApiError(StatusCode::CONFLICT, "节点名称已存在".into()));
     }
     let id = Uuid::new_v4();
@@ -433,7 +483,10 @@ async fn create_node(
         .bind(auth::sha256(&token))
         .execute(&state.pool)
         .await?;
-    Ok((StatusCode::CREATED, Json(json!({"id":id,"token":token,"hubUrl":state.public_url}))))
+    Ok((
+        StatusCode::CREATED,
+        Json(json!({"id":id,"token":token,"hubUrl":state.public_url})),
+    ))
 }
 
 async fn agent_snapshot(
@@ -501,6 +554,22 @@ async fn agent_snapshot(
                 .bind(gpu_id).bind(&process.username).bind(minute).bind(process.memory_used_mb*5).execute(&mut *transaction).await?;
         }
     }
+    for system_user in &snapshot.system_users {
+        sqlx::query("INSERT INTO node_system_users(node_id,username,uid,shell,last_seen_at) VALUES($1,$2,$3,$4,$5) ON CONFLICT(node_id,username) DO UPDATE SET uid=excluded.uid,shell=excluded.shell,last_seen_at=excluded.last_seen_at")
+            .bind(node_id).bind(&system_user.username).bind(system_user.uid).bind(&system_user.shell).bind(snapshot.sampled_at).execute(&mut *transaction).await?;
+        let exists: bool = sqlx::query_scalar(
+            "SELECT EXISTS(SELECT 1 FROM users WHERE username=$1 OR linux_username=$1)",
+        )
+        .bind(&system_user.username)
+        .fetch_one(&mut *transaction)
+        .await?;
+        if !exists {
+            let hash = auth::hash_password(&format!("{}@123456", system_user.username))
+                .map_err(|_| ApiError(StatusCode::INTERNAL_SERVER_ERROR, "密码处理失败".into()))?;
+            sqlx::query("INSERT INTO users(id,username,display_name,linux_username,password_hash,role,must_change_password) VALUES($1,$2,$2,$2,$3,'user',true) ON CONFLICT DO NOTHING")
+                .bind(Uuid::new_v4()).bind(&system_user.username).bind(hash).execute(&mut *transaction).await?;
+        }
+    }
     transaction.commit().await?;
     Ok(StatusCode::NO_CONTENT)
 }
@@ -549,9 +618,39 @@ async fn list_users(
     admin: AuthUser,
 ) -> Result<Json<Value>, ApiError> {
     admin.require_admin()?;
-    let rows=sqlx::query("SELECT id,username,display_name,linux_username,wecom_user_id,role,concurrent_gpu_limit,enabled FROM users ORDER BY display_name").fetch_all(&state.pool).await?;
+    let rows=sqlx::query("SELECT id,username,display_name,linux_username,wecom_user_id,role,concurrent_gpu_limit,enabled,must_change_password FROM users ORDER BY display_name").fetch_all(&state.pool).await?;
     Ok(Json(
-        json!({"users":rows.into_iter().map(|r|json!({"id":r.get::<Uuid,_>("id"),"username":r.get::<String,_>("username"),"displayName":r.get::<String,_>("display_name"),"linuxUsername":r.get::<String,_>("linux_username"),"wecomUserId":r.get::<Option<String>,_>("wecom_user_id"),"role":r.get::<String,_>("role"),"concurrentGpuLimit":r.get::<i32,_>("concurrent_gpu_limit"),"enabled":r.get::<bool,_>("enabled")})).collect::<Vec<_>>() }),
+        json!({"users":rows.into_iter().map(|r|json!({"id":r.get::<Uuid,_>("id"),"username":r.get::<String,_>("username"),"displayName":r.get::<String,_>("display_name"),"linuxUsername":r.get::<String,_>("linux_username"),"wecomUserId":r.get::<Option<String>,_>("wecom_user_id"),"role":r.get::<String,_>("role"),"concurrentGpuLimit":r.get::<i32,_>("concurrent_gpu_limit"),"enabled":r.get::<bool,_>("enabled"),"mustChangePassword":r.get::<bool,_>("must_change_password")})).collect::<Vec<_>>() }),
+    ))
+}
+
+async fn sync_system_users(
+    State(state): State<Arc<AppState>>,
+    admin: AuthUser,
+    headers: HeaderMap,
+) -> Result<Json<Value>, ApiError> {
+    admin.require_admin()?;
+    admin.require_csrf(&headers)?;
+    let names: Vec<String> = sqlx::query_scalar("SELECT DISTINCT username FROM node_system_users WHERE last_seen_at>now()-interval '10 minutes' ORDER BY username").fetch_all(&state.pool).await?;
+    let mut created = Vec::new();
+    for name in names {
+        let exists: bool = sqlx::query_scalar(
+            "SELECT EXISTS(SELECT 1 FROM users WHERE username=$1 OR linux_username=$1)",
+        )
+        .bind(&name)
+        .fetch_one(&state.pool)
+        .await?;
+        if exists {
+            continue;
+        }
+        let hash = auth::hash_password(&format!("{name}@123456"))
+            .map_err(|_| ApiError(StatusCode::INTERNAL_SERVER_ERROR, "密码处理失败".into()))?;
+        sqlx::query("INSERT INTO users(id,username,display_name,linux_username,password_hash,role,must_change_password) VALUES($1,$2,$2,$2,$3,'user',true)").bind(Uuid::new_v4()).bind(&name).bind(hash).execute(&state.pool).await?;
+        created.push(name);
+    }
+    let created_count = created.len();
+    Ok(Json(
+        json!({"created":created,"createdCount":created_count}),
     ))
 }
 
@@ -630,7 +729,7 @@ fn session_token(headers: &HeaderMap) -> Option<&str> {
         .ok()?
         .split(';')
         .map(str::trim)
-        .find_map(|v| v.strip_prefix("racktop_session="))
+        .find_map(|v| v.strip_prefix("gpudeck_session="))
 }
 fn bearer(headers: &HeaderMap) -> Option<&str> {
     headers

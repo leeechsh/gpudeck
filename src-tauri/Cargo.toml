@@ -1,14 +1,14 @@
 [package]
-name = "racktop"
-version = "1.29.0"
+name = "gpudeck"
+version = "2.0.0"
 description = "Live GPU & CPU monitoring for every server"
-authors = ["RackTop"]
+authors = ["GPUDeck"]
 edition = "2024"
-default-run = "racktop"
+default-run = "gpudeck"
 autobins = false
 
 [lib]
-name = "racktop_lib"
+name = "gpudeck_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [features]
@@ -16,12 +16,12 @@ default = []
 integration-probe = []
 
 [[bin]]
-name = "racktop"
+name = "gpudeck"
 path = "src/main.rs"
 
 [[bin]]
-name = "racktop-probe"
-path = "src/bin/racktop-probe.rs"
+name = "gpudeck-probe"
+path = "src/bin/gpudeck-probe.rs"
 required-features = ["integration-probe"]
 
 [build-dependencies]

@@ -7,10 +7,10 @@ use std::os::windows::process::CommandExt;
 use tokio::{process::Command, time::{timeout, Duration}};
 
 const REMOTE_SCRIPT: &str = r#"export LANG=C LC_ALL=C;
-cleanup_marker="$HOME/.racktop/.cleanup-usercpu-redirection-v1";
+cleanup_marker="$HOME/.gpudeck/.cleanup-usercpu-redirection-v1";
 if [ ! -e "$cleanup_marker" ]; then
-  cleanup_lock="$HOME/.racktop/.cleanup-usercpu-redirection-v1.lock";
-  if mkdir -p "$HOME/.racktop" && chmod 700 "$HOME/.racktop" && mkdir "$cleanup_lock" 2>/dev/null; then
+  cleanup_lock="$HOME/.gpudeck/.cleanup-usercpu-redirection-v1.lock";
+  if mkdir -p "$HOME/.gpudeck" && chmod 700 "$HOME/.gpudeck" && mkdir "$cleanup_lock" 2>/dev/null; then
     (
       trap 'rmdir "$cleanup_lock" 2>/dev/null || true' EXIT HUP INT TERM;
       cleanup_uid="$(id -u)";
@@ -20,7 +20,7 @@ if [ ! -e "$cleanup_marker" ]; then
         *)
           cleanup_expected="${cleanup_cpu_count}.00";
           cleanup_expected_size=$((${#cleanup_expected} + 1));
-          cleanup_recovery="$HOME/.racktop/recovered-usercpu-redirection-v1";
+          cleanup_recovery="$HOME/.gpudeck/recovered-usercpu-redirection-v1";
           if mkdir -p "$cleanup_recovery" && chmod 700 "$cleanup_recovery"; then
             cleanup_complete=1;
             for cleanup_candidate in "$HOME"/*; do
@@ -45,20 +45,20 @@ if [ ! -e "$cleanup_marker" ]; then
     command -v ionice >/dev/null 2>&1 && ionice -c 3 -p "$cleanup_pid" >/dev/null 2>&1 || true;
   fi;
 fi;
-if [ "${RACKTOP_REMOTE_HISTORY:-0}" = "1" ]; then mkdir -p "$HOME/.racktop" && touch "$HOME/.racktop/.client-heartbeat"; fi;
-printf '__RACKTOP_USER__\n'; id -un;
+if [ "${GPUDECK_REMOTE_HISTORY:-0}" = "1" ]; then mkdir -p "$HOME/.gpudeck" && touch "$HOME/.gpudeck/.client-heartbeat"; fi;
+printf '__GPUDECK_USER__\n'; id -un;
 uid_min="$(awk '$1 == "UID_MIN" { print $2; exit }' /etc/login.defs 2>/dev/null)"; uid_min="${uid_min:-1000}";
-printf '__RACKTOP_UIDMIN__\n%s\n' "$uid_min";
-printf '__RACKTOP_HOST__\n'; hostname;
-printf '__RACKTOP_OS__\n'; if [ -r /etc/os-release ]; then . /etc/os-release; printf '%s|%s\n' "${ID:-unknown}" "${PRETTY_NAME:-Linux}"; else printf 'unknown|Linux\n'; fi;
-printf '__RACKTOP_CPUMODEL__\n'; if command -v lscpu >/dev/null 2>&1; then lscpu | awk -F: '/^Model name:/ {sub(/^[[:space:]]+/, "", $2); print $2; exit}'; else awk -F: '/^model name[[:space:]]*:/ {sub(/^[[:space:]]+/, "", $2); print $2; exit}' /proc/cpuinfo; fi;
-printf '__RACKTOP_CPU1__\n'; head -n 1 /proc/stat;
+printf '__GPUDECK_UIDMIN__\n%s\n' "$uid_min";
+printf '__GPUDECK_HOST__\n'; hostname;
+printf '__GPUDECK_OS__\n'; if [ -r /etc/os-release ]; then . /etc/os-release; printf '%s|%s\n' "${ID:-unknown}" "${PRETTY_NAME:-Linux}"; else printf 'unknown|Linux\n'; fi;
+printf '__GPUDECK_CPUMODEL__\n'; if command -v lscpu >/dev/null 2>&1; then lscpu | awk -F: '/^Model name:/ {sub(/^[[:space:]]+/, "", $2); print $2; exit}'; else awk -F: '/^model name[[:space:]]*:/ {sub(/^[[:space:]]+/, "", $2); print $2; exit}' /proc/cpuinfo; fi;
+printf '__GPUDECK_CPU1__\n'; head -n 1 /proc/stat;
 sleep 0.25;
-printf '__RACKTOP_CPU2__\n'; head -n 1 /proc/stat;
-printf '__RACKTOP_LOAD__\n'; cat /proc/loadavg;
-printf '__RACKTOP_MEM__\n'; grep -E '^(MemTotal|MemAvailable|SwapTotal|SwapFree):' /proc/meminfo;
-if [ "${RACKTOP_INCLUDE_DISKS:-1}" = "1" ]; then
-  printf '__RACKTOP_DISK__\n';
+printf '__GPUDECK_CPU2__\n'; head -n 1 /proc/stat;
+printf '__GPUDECK_LOAD__\n'; cat /proc/loadavg;
+printf '__GPUDECK_MEM__\n'; grep -E '^(MemTotal|MemAvailable|SwapTotal|SwapFree):' /proc/meminfo;
+if [ "${GPUDECK_INCLUDE_DISKS:-1}" = "1" ]; then
+  printf '__GPUDECK_DISK__\n';
   current_user="$(id -un)";
   home_mount="$(df -P -k "$HOME" 2>/dev/null | awk 'NR == 2 {print $6}')";
   home_used="$(du -skx "$HOME" 2>/dev/null | awk '{print $1; exit}')"; home_used="${home_used:-0}";
@@ -78,15 +78,15 @@ if [ "${RACKTOP_INCLUDE_DISKS:-1}" = "1" ]; then
     printf '%s|%s|%s|%s|%s\n' "$mount" "$used" "$total" "$available" "$own";
   done | head -n 16;
 fi;
-printf '__RACKTOP_USERCPU__\n'; ps -u "$(id -un)" -o pcpu= 2>/dev/null | awk -v n="$(getconf _NPROCESSORS_ONLN 2>/dev/null || printf 1)" '{s+=$1} END {printf "%.2f\n", (n>0?s/n:s+0)}';
-printf '__RACKTOP_ACCELERATOR__\n';
+printf '__GPUDECK_USERCPU__\n'; ps -u "$(id -un)" -o pcpu= 2>/dev/null | awk -v n="$(getconf _NPROCESSORS_ONLN 2>/dev/null || printf 1)" '{s+=$1} END {printf "%.2f\n", (n>0?s/n:s+0)}';
+printf '__GPUDECK_ACCELERATOR__\n';
 if command -v nvidia-smi >/dev/null 2>&1; then printf 'nvidia\n'; elif command -v npu-smi >/dev/null 2>&1; then printf 'ascend\n'; elif command -v ppu-smi >/dev/null 2>&1; then printf 'ppu\n'; else printf 'nvidia\n'; fi;
-printf '__RACKTOP_NVIDIA__\n';
+printf '__GPUDECK_NVIDIA__\n';
 if ! command -v nvidia-smi >/dev/null 2>&1 && command -v npu-smi >/dev/null 2>&1; then
   ascend_info="$(npu-smi info 2>&1)"; ascend_status=$?;
   if [ "$ascend_status" -eq 0 ]; then
     printf 'available\n';
-    printf '__RACKTOP_GPU__\n';
+    printf '__GPUDECK_GPU__\n';
     printf '%s\n' "$ascend_info" | awk -F '|' '
       function trim(value) { gsub(/^[[:space:]]+|[[:space:]]+$/, "", value); return value }
       /^\|/ {
@@ -106,11 +106,11 @@ elif ! command -v nvidia-smi >/dev/null 2>&1 && command -v ppu-smi >/dev/null 2>
   ppu_info="$(ppu-smi --query-ppu=index,name,uuid,utilization.ppu,utilization.memory,memory.used,memory.total,temperature.ppu,power.draw --format=csv,noheader,nounits 2>&1)"; ppu_status=$?;
   if [ "$ppu_status" -eq 0 ]; then
     printf 'available\n';
-    printf '__RACKTOP_GPU__\n';
+    printf '__GPUDECK_GPU__\n';
     printf '%s\n' "$ppu_info";
   elif ppu_basic="$(ppu-smi --query-ppu=index,name,uuid,memory.used,memory.total --format=csv,noheader,nounits 2>/dev/null)"; then
     printf 'available\n';
-    printf '__RACKTOP_GPU__\n';
+    printf '__GPUDECK_GPU__\n';
     printf '%s\n' "$ppu_basic" | awk -F ',' '
       function trim(value) { gsub(/^[[:space:]]+|[[:space:]]+$/, "", value); return value }
       NF >= 5 { used=trim($4)+0; total=trim($5)+0; memory_percent=(total > 0 ? used/total*100 : 0); printf "%s, %s, %s, 0, %.2f, %.2f, %.2f, 0, 0\n", trim($1), trim($2), trim($3), memory_percent, used, total }
@@ -128,7 +128,7 @@ else
   printf '%s\n' "$nvidia_state";
   if [ "$nvidia_state" != available ]; then printf '%s\n' "$nvidia_list"; fi;
   if [ "$nvidia_state" = available ] || [ "$nvidia_state" = degraded ]; then
-    printf '__RACKTOP_GPU__\n';
+    printf '__GPUDECK_GPU__\n';
     query_nvidia_gpus() {
       base_query='index,name,uuid,utilization.gpu,utilization.memory,memory.used,memory.total,temperature.gpu,power.draw,power.limit';
       detail_query='clocks.current.sm,clocks.current.memory,pstate,fan.speed';
@@ -156,8 +156,8 @@ else
     fi;
   fi;
 fi;
-if [ "${RACKTOP_INCLUDE_PROCESSES:-1}" = "1" ]; then
-  printf '__RACKTOP_GPUPROC__\n';
+if [ "${GPUDECK_INCLUDE_PROCESSES:-1}" = "1" ]; then
+  printf '__GPUDECK_GPUPROC__\n';
   gpu_proc="";
   if command -v nvidia-smi >/dev/null 2>&1; then
     query_gpu_processes() {
@@ -189,13 +189,13 @@ if [ "${RACKTOP_INCLUDE_PROCESSES:-1}" = "1" ]; then
     gpu_proc="$(ppu-smi --query-compute-apps=uuid,pid,process_name,used_ppu_memory --format=csv,noheader,nounits 2>/dev/null || true)";
     printf '%s\n' "$gpu_proc";
   fi;
-  printf '__RACKTOP_GPUPMON__\n';
+  printf '__GPUDECK_GPUPMON__\n';
   if command -v nvidia-smi >/dev/null 2>&1; then nvidia-smi pmon -c 1 -s um 2>/dev/null || true; fi;
-  printf '__RACKTOP_PS__\n';
+  printf '__GPUDECK_PS__\n';
   gpu_pids="$(printf '%s\n' "$gpu_proc" | cut -d, -f2 | tr -d ' ' | paste -sd, -)";
   ps -eo user:64=,uid=,pid=,ppid=,pgid=,pcpu=,pmem=,rss=,etime=,args= --sort=-pcpu 2>/dev/null | awk -v gpu_pids="$gpu_pids" -v uid_min="$uid_min" 'BEGIN { n=split(gpu_pids, ids, ","); for (i=1; i<=n; i++) if (ids[i] != "") gpu[ids[i]]=1 } { is_gpu=($3 in gpu); is_child=($4 in gpu); is_user=($2 >= uid_min); is_main=($3 == $5 && $6 > 0); has_memory=($8 > 1048576); if (is_gpu || (is_user && has_memory && (is_child || (is_main && main_count < 64)))) { print; if (!is_gpu && is_main && !is_child) main_count++ } }' || true;
 fi;
-printf '__RACKTOP_END__\n';"#;
+printf '__GPUDECK_END__\n';"#;
 
 pub async fn collect(server: &Server) -> Result<Snapshot, String> {
     collect_with_password(server, None, true, true).await
@@ -213,7 +213,7 @@ pub struct CollectionResult {
 pub async fn collect_with_password_detailed(server: &Server, password: Option<&str>, include_processes: bool, include_disks: bool) -> Result<CollectionResult, String> {
     let (mut command, target) = configured_ssh_command(server, password)?;
     command.arg(target).arg(format!(
-        "RACKTOP_INCLUDE_PROCESSES={} RACKTOP_INCLUDE_DISKS={} RACKTOP_REMOTE_HISTORY={};{REMOTE_SCRIPT}",
+        "GPUDECK_INCLUDE_PROCESSES={} GPUDECK_INCLUDE_DISKS={} GPUDECK_REMOTE_HISTORY={};{REMOTE_SCRIPT}",
         if include_processes { 1 } else { 0 },
         if include_disks { 1 } else { 0 },
         if server.remote_history_enabled { 1 } else { 0 },
@@ -267,7 +267,7 @@ pub fn collection_display_command(server: &Server, include_processes: bool, incl
         format!("{}@{}", server.username, server.host)
     });
     let remote_command = format!(
-        "RACKTOP_INCLUDE_PROCESSES={} RACKTOP_INCLUDE_DISKS={} RACKTOP_REMOTE_HISTORY={};{REMOTE_SCRIPT}",
+        "GPUDECK_INCLUDE_PROCESSES={} GPUDECK_INCLUDE_DISKS={} GPUDECK_REMOTE_HISTORY={};{REMOTE_SCRIPT}",
         if include_processes { 1 } else { 0 },
         if include_disks { 1 } else { 0 },
         if server.remote_history_enabled { 1 } else { 0 },
@@ -290,20 +290,20 @@ fn configured_ssh_command_with_control(server: &Server, password: Option<&str>, 
     command.args(["-o", "ConnectTimeout=8", "-o", "ServerAliveInterval=5", "-o", "ServerAliveCountMax=2", "-o", "StrictHostKeyChecking=yes"]);
     if server.auth_method == "password" {
         let password = password.ok_or("没有可用密码；请重新编辑服务器并输入密码")?;
-        let executable = std::env::current_exe().map_err(|error| format!("无法定位 RackTop SSH_ASKPASS：{error}"))?;
+        let executable = std::env::current_exe().map_err(|error| format!("无法定位 GPUDeck SSH_ASKPASS：{error}"))?;
         command
             .args(["-o", "BatchMode=no", "-o", "PreferredAuthentications=password,keyboard-interactive", "-o", "PubkeyAuthentication=no", "-o", "NumberOfPasswordPrompts=1"])
             .env("SSH_ASKPASS", executable)
             .env("SSH_ASKPASS_REQUIRE", "force")
-            .env("RACKTOP_ASKPASS_PASSWORD", password);
+            .env("GPUDECK_ASKPASS_PASSWORD", password);
         #[cfg(unix)]
-        command.env("DISPLAY", "racktop:0");
+        command.env("DISPLAY", "gpudeck:0");
     } else {
         command.args(["-o", "BatchMode=yes"]);
     }
     #[cfg(unix)]
     if _use_control_master {
-        command.args(["-o", "ControlMaster=auto", "-o", "ControlPersist=600", "-o", "ControlPath=/tmp/racktop-%C"]);
+        command.args(["-o", "ControlMaster=auto", "-o", "ControlPersist=600", "-o", "ControlPath=/tmp/gpudeck-%C"]);
     } else {
         command.args(["-o", "ControlMaster=no", "-o", "ControlPath=none"]);
     }
@@ -340,7 +340,7 @@ pub async fn install_nvidia_driver(server: &Server, password: Option<&str>) -> R
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
         if stderr.to_ascii_lowercase().contains("password is required") || stderr.to_ascii_lowercase().contains("a password is required") {
-            return Err("服务器需要交互式 sudo 密码。RackTop 不会代填管理员密码；请复制安装命令并在终端执行。".into());
+            return Err("服务器需要交互式 sudo 密码。GPUDeck 不会代填管理员密码；请复制安装命令并在终端执行。".into());
         }
         return Err(format!("驱动安装失败：{stderr}"));
     }
@@ -350,7 +350,7 @@ pub async fn install_nvidia_driver(server: &Server, password: Option<&str>) -> R
 pub(crate) fn classify_ssh_error(stderr: &str) -> String {
     let lower = stderr.to_lowercase();
     if lower.contains("host key verification failed") || lower.contains("no host key is known") {
-        "主机指纹尚未信任或已发生变化。为防止中间人攻击，RackTop 已阻止连接；请先用系统 ssh 核对并接受指纹。".into()
+        "主机指纹尚未信任或已发生变化。为防止中间人攻击，GPUDeck 已阻止连接；请先用系统 ssh 核对并接受指纹。".into()
     } else if lower.contains("permission denied") {
         format!("SSH 认证失败：{stderr}")
     } else if lower.contains("connection refused") {
@@ -432,7 +432,7 @@ fn split_sections(output: &str) -> HashMap<String, Vec<String>> {
     let mut current: Option<String> = None;
     for raw_line in output.lines() {
         let line = raw_line.trim_end();
-        if let Some(name) = line.strip_prefix("__RACKTOP_").and_then(|value| value.strip_suffix("__")) {
+        if let Some(name) = line.strip_prefix("__GPUDECK_").and_then(|value| value.strip_suffix("__")) {
             if name == "END" { current = None; } else { current = Some(name.to_string()); sections.entry(name.to_string()).or_default(); }
         } else if let Some(section) = current.as_ref() {
             if !line.trim().is_empty() { sections.entry(section.clone()).or_default().push(line.trim().to_string()); }
@@ -624,8 +624,8 @@ fn termination_script(pid: u32) -> Result<String, String> {
 current_uid="$(id -u)"
 process_uid="$(ps -o uid= -p "$pid" 2>/dev/null | tr -d ' ')"
 process_start="$(ps -o lstart= -p "$pid" 2>/dev/null | sed 's/^ *//;s/ *$//')"
-if [ -z "$process_uid" ] || [ -z "$process_start" ]; then printf '__RACKTOP_TERMINATE_NOT_FOUND__\n'; exit 44; fi
-if [ "$process_uid" != "$current_uid" ]; then printf '__RACKTOP_TERMINATE_OWNER_MISMATCH__\n'; exit 45; fi
+if [ -z "$process_uid" ] || [ -z "$process_start" ]; then printf '__GPUDECK_TERMINATE_NOT_FOUND__\n'; exit 44; fi
+if [ "$process_uid" != "$current_uid" ]; then printf '__GPUDECK_TERMINATE_OWNER_MISMATCH__\n'; exit 45; fi
 tree_pids="$pid"
 frontier="$pid"
 while [ -n "$frontier" ]; do
@@ -661,10 +661,10 @@ if ! printf '%s' "$target_records" | while IFS='|' read -r target_pid target_uid
   remaining_start="$(ps -o lstart= -p "$target_pid" 2>/dev/null | sed 's/^ *//;s/ *$//')"
   if [ "$remaining_uid" = "$target_uid" ] && [ "$remaining_start" = "$target_start" ]; then exit 46; fi
 done; then
-  printf '__RACKTOP_TERMINATE_REMAINING__\n'
+  printf '__GPUDECK_TERMINATE_REMAINING__\n'
   exit 46
 fi
-printf '__RACKTOP_TERMINATE_OK__\n'"#))
+printf '__GPUDECK_TERMINATE_OK__\n'"#))
 }
 
 pub async fn terminate_process_tree(server: &Server, password: Option<&str>, pid: u32) -> Result<String, String> {
@@ -673,12 +673,12 @@ pub async fn terminate_process_tree(server: &Server, password: Option<&str>, pid
     command.arg(target).arg(script).stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped());
     let output = timeout(Duration::from_secs(12), command.output()).await.map_err(|_| format!("结束 PID {pid} 超时（12 秒）"))?.map_err(|error| format!("无法启动系统 ssh：{error}"))?;
     let stdout = String::from_utf8_lossy(&output.stdout);
-    if output.status.success() && stdout.contains("__RACKTOP_TERMINATE_OK__") {
+    if output.status.success() && stdout.contains("__GPUDECK_TERMINATE_OK__") {
         return Ok(format!("已结束 PID {pid} 的进程树"));
     }
-    if stdout.contains("__RACKTOP_TERMINATE_NOT_FOUND__") { return Err(format!("PID {pid} 已不存在，请刷新后重试")); }
-    if stdout.contains("__RACKTOP_TERMINATE_OWNER_MISMATCH__") { return Err(format!("PID {pid} 不属于当前 SSH 用户，操作已阻止")); }
-    if stdout.contains("__RACKTOP_TERMINATE_REMAINING__") { return Err(format!("PID {pid} 的部分进程仍在运行，请在终端中检查进程状态")); }
+    if stdout.contains("__GPUDECK_TERMINATE_NOT_FOUND__") { return Err(format!("PID {pid} 已不存在，请刷新后重试")); }
+    if stdout.contains("__GPUDECK_TERMINATE_OWNER_MISMATCH__") { return Err(format!("PID {pid} 不属于当前 SSH 用户，操作已阻止")); }
+    if stdout.contains("__GPUDECK_TERMINATE_REMAINING__") { return Err(format!("PID {pid} 的部分进程仍在运行，请在终端中检查进程状态")); }
     let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
     Err(if stderr.is_empty() { format!("无法结束 PID {pid}") } else { classify_ssh_error(&stderr) })
 }
@@ -715,14 +715,14 @@ workdir="$(decode_base64 '{workdir}')"
 task_command="$(decode_base64 '{payload}')"
 project_log_path="$(decode_base64 '{project_log}')"
 case "$workdir" in '~') workdir="$HOME" ;; '~/'*) workdir="$HOME/${{workdir#\~/}}" ;; esac
-if [ ! -d "$workdir" ]; then printf '__RACKTOP_RUN_DIR_MISSING__\n'; exit 42; fi
-run_dir="$HOME/.racktop/runs/{run_id}"
+if [ ! -d "$workdir" ]; then printf '__GPUDECK_RUN_DIR_MISSING__\n'; exit 42; fi
+run_dir="$HOME/.gpudeck/runs/{run_id}"
 mkdir -p "$run_dir"
 if [ -n "$project_log_path" ]; then
   case "$project_log_path" in '~') project_log_path="$HOME" ;; '~/'*) project_log_path="$HOME/${{project_log_path#\~/}}" ;; /*) ;; *) project_log_path="$workdir/$project_log_path" ;; esac
   project_log_dir="$(dirname "$project_log_path")"
   mkdir -p "$project_log_dir"
-  if [ -e "$project_log_path" ] && [ ! -L "$project_log_path" ]; then printf '__RACKTOP_PROJECT_LOG_EXISTS__%s\n' "$project_log_path"; exit 44; fi
+  if [ -e "$project_log_path" ] && [ ! -L "$project_log_path" ]; then printf '__GPUDECK_PROJECT_LOG_EXISTS__%s\n' "$project_log_path"; exit 44; fi
   ln -sfn "$run_dir/output.log" "$project_log_path"
 fi
 launch_script="$run_dir/launch.sh"
@@ -730,7 +730,7 @@ launch_script="$run_dir/launch.sh"
   printf '#!/bin/sh\n'
   printf 'export {visible_devices_variable}=%s\n' '{gpu_csv}'
   printf '%s\n' "$task_command"
-  printf 'exit_code=$?\nprintf "%%s" "$exit_code" > "$HOME/.racktop/runs/{run_id}/exit-code"\nexit "$exit_code"\n'
+  printf 'exit_code=$?\nprintf "%%s" "$exit_code" > "$HOME/.gpudeck/runs/{run_id}/exit-code"\nexit "$exit_code"\n'
 }} > "$launch_script"
 chmod 700 "$launch_script"
 rm -f "$run_dir/exit-code"
@@ -743,19 +743,19 @@ fi
 pid=$!
 printf '%s' "$pid" > "$run_dir/pid"
 sleep 0.8
-if ! kill -0 "$pid" 2>/dev/null; then printf '__RACKTOP_RUN_FAILED__\n'; tail -n 12 "$run_dir/output.log" 2>/dev/null; exit 43; fi
-printf '__RACKTOP_RUN_OK__%s\n' "$pid"
+if ! kill -0 "$pid" 2>/dev/null; then printf '__GPUDECK_RUN_FAILED__\n'; tail -n 12 "$run_dir/output.log" 2>/dev/null; exit 43; fi
+printf '__GPUDECK_RUN_OK__%s\n' "$pid"
 "#);
     let (mut command, target) = configured_ssh_command(server, password)?;
     command.arg(target).arg(script).stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped());
     let output = timeout(Duration::from_secs(15), command.output()).await.map_err(|_| "启动任务超时（15 秒）".to_string())?.map_err(|error| format!("无法启动系统 ssh：{error}"))?;
     let stdout = String::from_utf8_lossy(&output.stdout);
-    if stdout.contains("__RACKTOP_RUN_DIR_MISSING__") { return Err(format!("远端工作目录不存在：{}", working_directory.trim())); }
-    if stdout.contains("__RACKTOP_PROJECT_LOG_EXISTS__") { return Err(stdout.replace("__RACKTOP_PROJECT_LOG_EXISTS__", "项目日志路径已存在，未覆盖：").trim().to_string()); }
-    if stdout.contains("__RACKTOP_RUN_FAILED__") { return Err(stdout.replace("__RACKTOP_RUN_FAILED__", "任务启动后立即退出：").trim().to_string()); }
+    if stdout.contains("__GPUDECK_RUN_DIR_MISSING__") { return Err(format!("远端工作目录不存在：{}", working_directory.trim())); }
+    if stdout.contains("__GPUDECK_PROJECT_LOG_EXISTS__") { return Err(stdout.replace("__GPUDECK_PROJECT_LOG_EXISTS__", "项目日志路径已存在，未覆盖：").trim().to_string()); }
+    if stdout.contains("__GPUDECK_RUN_FAILED__") { return Err(stdout.replace("__GPUDECK_RUN_FAILED__", "任务启动后立即退出：").trim().to_string()); }
     if output.status.success() {
-        if let Some(pid) = stdout.lines().find_map(|line| line.strip_prefix("__RACKTOP_RUN_OK__").and_then(|value| value.trim().parse::<u32>().ok())) {
-            return Ok(ManagedRunLaunchResult { pid, log_path: format!("~/.racktop/runs/{run_id}/output.log") });
+        if let Some(pid) = stdout.lines().find_map(|line| line.strip_prefix("__GPUDECK_RUN_OK__").and_then(|value| value.trim().parse::<u32>().ok())) {
+            return Ok(ManagedRunLaunchResult { pid, log_path: format!("~/.gpudeck/runs/{run_id}/output.log") });
         }
     }
     let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
@@ -765,7 +765,7 @@ printf '__RACKTOP_RUN_OK__%s\n' "$pid"
 pub async fn read_managed_run_log(server: &Server, password: Option<&str>, run_id: &str, lines: u32) -> Result<String, String> {
     validate_run_id(run_id)?;
     let lines = lines.clamp(20, 1_000);
-    let script = format!("tail -n {lines} \"$HOME/.racktop/runs/{run_id}/output.log\" 2>/dev/null || true");
+    let script = format!("tail -n {lines} \"$HOME/.gpudeck/runs/{run_id}/output.log\" 2>/dev/null || true");
     let (mut command, target) = configured_ssh_command(server, password)?;
     command.arg(target).arg(script).stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped());
     let output = timeout(Duration::from_secs(10), command.output()).await.map_err(|_| "读取任务日志超时".to_string())?.map_err(|error| format!("无法启动系统 ssh：{error}"))?;
@@ -776,7 +776,7 @@ pub async fn read_managed_run_log(server: &Server, password: Option<&str>, run_i
 pub async fn managed_run_status(server: &Server, password: Option<&str>, run_id: &str, pid: u32) -> Result<ManagedRunRemoteStatus, String> {
     validate_run_id(run_id)?;
     if pid <= 1 { return Err("任务 PID 无效".into()); }
-    let script = format!(r#"exit_file="$HOME/.racktop/runs/{run_id}/exit-code"
+    let script = format!(r#"exit_file="$HOME/.gpudeck/runs/{run_id}/exit-code"
 if [ -f "$exit_file" ]; then printf 'exited:'; cat "$exit_file"; printf '\n';
 elif kill -0 {pid} 2>/dev/null; then printf 'running\n';
 else printf 'unknown\n'; fi"#);
@@ -796,7 +796,7 @@ else printf 'unknown\n'; fi"#);
 mod tests {
     use super::*;
 
-    const SAMPLE: &str = "__RACKTOP_USER__\ntongzh\n__RACKTOP_UIDMIN__\n1000\n__RACKTOP_HOST__\ngpu-box\n__RACKTOP_OS__\nubuntu|Ubuntu 22.04 LTS\n__RACKTOP_CPUMODEL__\nAMD EPYC 9654 96-Core Processor\n__RACKTOP_CPU1__\ncpu 100 0 20 880 0 0 0\n__RACKTOP_CPU2__\ncpu 120 0 30 950 0 0 0\n__RACKTOP_LOAD__\n0.06 0.11 0.09 1/100 1\n__RACKTOP_MEM__\nMemTotal: 100000 kB\nMemAvailable: 75000 kB\nSwapTotal: 1000 kB\nSwapFree: 900 kB\n__RACKTOP_USERCPU__\n5.50\n__RACKTOP_NVIDIA__\navailable\n__RACKTOP_GPU__\n0, NVIDIA GeForce RTX 4090 D, GPU-abc, 25, 10, 2048, 24564, 48, 110.5\n__RACKTOP_GPUPROC__\nGPU-abc, 4242, python, 2048\n__RACKTOP_GPUPMON__\n# gpu pid type sm mem\n0 4242 C 73 41 - - - - 2048 0 python\n__RACKTOP_PS__\ntongzh 1000 4242 1 4242 12.5 2.0 204800 01:20 python train.py\ntongzh 1000 4343 4242 4242 1.5 1.5 2097152 00:10 python data-loader.py\ntongzh 1000 5000 1 5000 0.8 1.2 1572864 00:30 python cpu-task.py\ntongzh 1000 5500 1 5500 0.9 0.5 1048576 00:20 python small-task.py\ntongzh 1000 5800 1 5800 1.2 1.4 1468006 00:20 /usr/bin/python3 /usr/bin/nvitop\ntongzh 1000 5900 1 5900 1.1 1.5 1572864 00:20 /home/tongzh/.vscode-server/bin/node server-main.js\ntongzh 1000 6000 1 6000 0.7 1.1 1153434 10:00 /usr/lib/systemd/systemd --user\nroot 0 99 1 99 0.2 1.2 1258291 10:00 systemd-worker\n__RACKTOP_END__\n";
+    const SAMPLE: &str = "__GPUDECK_USER__\ntongzh\n__GPUDECK_UIDMIN__\n1000\n__GPUDECK_HOST__\ngpu-box\n__GPUDECK_OS__\nubuntu|Ubuntu 22.04 LTS\n__GPUDECK_CPUMODEL__\nAMD EPYC 9654 96-Core Processor\n__GPUDECK_CPU1__\ncpu 100 0 20 880 0 0 0\n__GPUDECK_CPU2__\ncpu 120 0 30 950 0 0 0\n__GPUDECK_LOAD__\n0.06 0.11 0.09 1/100 1\n__GPUDECK_MEM__\nMemTotal: 100000 kB\nMemAvailable: 75000 kB\nSwapTotal: 1000 kB\nSwapFree: 900 kB\n__GPUDECK_USERCPU__\n5.50\n__GPUDECK_NVIDIA__\navailable\n__GPUDECK_GPU__\n0, NVIDIA GeForce RTX 4090 D, GPU-abc, 25, 10, 2048, 24564, 48, 110.5\n__GPUDECK_GPUPROC__\nGPU-abc, 4242, python, 2048\n__GPUDECK_GPUPMON__\n# gpu pid type sm mem\n0 4242 C 73 41 - - - - 2048 0 python\n__GPUDECK_PS__\ntongzh 1000 4242 1 4242 12.5 2.0 204800 01:20 python train.py\ntongzh 1000 4343 4242 4242 1.5 1.5 2097152 00:10 python data-loader.py\ntongzh 1000 5000 1 5000 0.8 1.2 1572864 00:30 python cpu-task.py\ntongzh 1000 5500 1 5500 0.9 0.5 1048576 00:20 python small-task.py\ntongzh 1000 5800 1 5800 1.2 1.4 1468006 00:20 /usr/bin/python3 /usr/bin/nvitop\ntongzh 1000 5900 1 5900 1.1 1.5 1572864 00:20 /home/tongzh/.vscode-server/bin/node server-main.js\ntongzh 1000 6000 1 6000 0.7 1.1 1153434 10:00 /usr/lib/systemd/systemd --user\nroot 0 99 1 99 0.2 1.2 1258291 10:00 systemd-worker\n__GPUDECK_END__\n";
 
     #[test]
     fn parses_realistic_snapshot() {
@@ -836,8 +836,8 @@ mod tests {
     #[test]
     fn keeps_healthy_gpus_when_one_device_handle_fails() {
         let output = SAMPLE.replacen(
-            "available\n__RACKTOP_GPU__\n0, NVIDIA GeForce RTX 4090 D, GPU-abc, 25, 10, 2048, 24564, 48, 110.5",
-            "degraded\nGPU 0: NVIDIA GeForce RTX 4090 (UUID: GPU-abc)\nUnable to determine the device handle for gpu 0000:D1:00.0: Unknown Error\n__RACKTOP_GPU__\n0, NVIDIA GeForce RTX 4090 D, GPU-abc, 25, 10, 2048, 24564, 48, 110.5\n1, Unavailable GPU (0000:D1:00.0), unavailable-0000_D1_00_0, 0, 0, 0, 0, 0, 0",
+            "available\n__GPUDECK_GPU__\n0, NVIDIA GeForce RTX 4090 D, GPU-abc, 25, 10, 2048, 24564, 48, 110.5",
+            "degraded\nGPU 0: NVIDIA GeForce RTX 4090 (UUID: GPU-abc)\nUnable to determine the device handle for gpu 0000:D1:00.0: Unknown Error\n__GPUDECK_GPU__\n0, NVIDIA GeForce RTX 4090 D, GPU-abc, 25, 10, 2048, 24564, 48, 110.5\n1, Unavailable GPU (0000:D1:00.0), unavailable-0000_D1_00_0, 0, 0, 0, 0, 0, 0",
             1,
         );
         let snapshot = parse_snapshot("server-1", &output).unwrap();
@@ -908,8 +908,8 @@ mod tests {
 
     #[test]
     fn preserves_process_sampling_signal_when_process_query_is_skipped() {
-        let process_start = SAMPLE.find("__RACKTOP_GPUPROC__").unwrap();
-        let end = SAMPLE.find("__RACKTOP_END__").unwrap();
+        let process_start = SAMPLE.find("__GPUDECK_GPUPROC__").unwrap();
+        let end = SAMPLE.find("__GPUDECK_END__").unwrap();
         let output = format!("{}{}", &SAMPLE[..process_start], &SAMPLE[end..]);
         let snapshot = parse_snapshot("server-1", &output).unwrap();
         assert!(!snapshot.processes_sampled);
@@ -928,7 +928,7 @@ mod tests {
         assert!(script.contains("target_records"));
         assert!(script.contains("kill -TERM \"$target_pid\""));
         assert!(script.contains("remaining_start"));
-        assert!(script.contains("__RACKTOP_TERMINATE_REMAINING__"));
+        assert!(script.contains("__GPUDECK_TERMINATE_REMAINING__"));
         assert!(!script.contains("kill -TERM -- \"-$process_pgid\""));
     }
 
@@ -969,7 +969,7 @@ mod tests {
         assert!(REMOTE_SCRIPT.contains("ionice -c 3 -p \"$cleanup_pid\""));
         assert!(REMOTE_SCRIPT.contains("[ \"$cleanup_complete\" = 1 ] && touch \"$cleanup_marker\""));
         assert!(REMOTE_SCRIPT.find(") </dev/null >/dev/null 2>&1 &").unwrap()
-            < REMOTE_SCRIPT.find("printf '__RACKTOP_USER__").unwrap());
+            < REMOTE_SCRIPT.find("printf '__GPUDECK_USER__").unwrap());
     }
 
     #[test]
@@ -981,7 +981,7 @@ mod tests {
 
     #[test]
     fn recognizes_ascend_snapshots_without_changing_gpu_compatibility_fields() {
-        let sample = SAMPLE.replace("__RACKTOP_NVIDIA__", "__RACKTOP_ACCELERATOR__\nascend\n__RACKTOP_NVIDIA__")
+        let sample = SAMPLE.replace("__GPUDECK_NVIDIA__", "__GPUDECK_ACCELERATOR__\nascend\n__GPUDECK_NVIDIA__")
             .replace("NVIDIA GeForce RTX 4090 D, GPU-abc", "Ascend 910B, NPU-0-0");
         let snapshot = parse_snapshot("server-npu", &sample).unwrap();
         assert_eq!(snapshot.accelerator_vendor, "ascend");
@@ -992,7 +992,7 @@ mod tests {
 
     #[test]
     fn recognizes_ppu_snapshots_without_a_separate_metric_model() {
-        let sample = SAMPLE.replace("__RACKTOP_NVIDIA__", "__RACKTOP_ACCELERATOR__\nppu\n__RACKTOP_NVIDIA__")
+        let sample = SAMPLE.replace("__GPUDECK_NVIDIA__", "__GPUDECK_ACCELERATOR__\nppu\n__GPUDECK_NVIDIA__")
             .replace("NVIDIA GeForce RTX 4090 D", "Zhenwu PPU")
             .replace("GPU-abc", "PPU-abc");
         let snapshot = parse_snapshot("server-ppu", &sample).unwrap();

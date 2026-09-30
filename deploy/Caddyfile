@@ -1,8 +1,8 @@
-{$RACKTOP_SITE_ADDRESS:http://:80} {
+{$GPUDECK_SITE_ADDRESS:http://:80} {
     encode zstd gzip
     route {
-        reverse_proxy /api/* hub:8080
-        reverse_proxy /healthz hub:8080
+        reverse_proxy /api/* gpudeck-hub:8080
+        reverse_proxy /healthz gpudeck-hub:8080
         root * /srv
         try_files {path} /index.html
         file_server

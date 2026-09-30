@@ -1788,7 +1788,7 @@ impl Database {
                     .map_err(|error| error.to_string())?
                     .remove(&id);
                 if draft.save_password {
-                    let entry = keyring::Entry::new("com.racktop.desktop", &id)
+                    let entry = keyring::Entry::new("io.gpudeck.desktop", &id)
                         .map_err(|error| error.to_string())?;
                     entry
                         .set_password(&password)
@@ -1879,7 +1879,7 @@ impl Database {
         transaction.commit().map_err(|error| error.to_string())?;
         drop(connection);
         if delete_credential && auth_method.as_deref() == Some("password") {
-            if let Ok(entry) = keyring::Entry::new("com.racktop.desktop", id) {
+            if let Ok(entry) = keyring::Entry::new("io.gpudeck.desktop", id) {
                 let _ = entry.delete_credential();
             }
         }
@@ -1961,7 +1961,7 @@ impl Database {
             .map_err(|error| error.to_string())?;
         drop(connection);
         if delete_credential {
-            if let Ok(entry) = keyring::Entry::new("com.racktop.desktop", server_id) {
+            if let Ok(entry) = keyring::Entry::new("io.gpudeck.desktop", server_id) {
                 let _ = entry.delete_credential();
             }
         }
@@ -2019,7 +2019,7 @@ impl Database {
             return Err(error);
         }
         let entry =
-            keyring::Entry::new("com.racktop.desktop", id).map_err(|error| error.to_string())?;
+            keyring::Entry::new("io.gpudeck.desktop", id).map_err(|error| error.to_string())?;
         match entry.get_password() {
             Ok(password) => {
                 self.session_passwords
@@ -3460,7 +3460,7 @@ fn dangerous_sync_path(path: &str) -> bool {
         || normalized.split('/').any(|component| component == "..")
 }
 
-const USAGE_COVERAGE_USER: &str = "__racktop_coverage__";
+const USAGE_COVERAGE_USER: &str = "__gpudeck_coverage__";
 
 fn is_attributable_gpu_process(username: &str, command: &str) -> bool {
     const SYSTEM_USERS: &[&str] = &["root", "unknown", "gdm", "lightdm", "sddm"];
@@ -4271,9 +4271,9 @@ mod tests {
     #[test]
     #[ignore = "requires an explicitly prepared database copy, never the live database"]
     fn repair_real_database_copy() {
-        let path = std::env::var("RACKTOP_STORAGE_TEST_COPY")
-            .expect("set RACKTOP_STORAGE_TEST_COPY to a disposable database copy");
-        assert!(path.starts_with("/private/tmp/racktop-storage-"));
+        let path = std::env::var("GPUDECK_STORAGE_TEST_COPY")
+            .expect("set GPUDECK_STORAGE_TEST_COPY to a disposable database copy");
+        assert!(path.starts_with("/private/tmp/gpudeck-storage-"));
         let db = Database::open(Path::new(&path)).unwrap();
         let connection = db.connection.lock().unwrap();
         let integrity: String = connection
@@ -4451,9 +4451,9 @@ mod tests {
              CREATE INDEX idx_usage_lookup ON usage_buckets(server_id,timestamp);
              INSERT INTO local_usage_minutes VALUES('server-a',7260);
              INSERT INTO usage_buckets VALUES
-               ('server-a',7260,'GPU-a','__racktop_coverage__',0,0,60),
+               ('server-a',7260,'GPU-a','__gpudeck_coverage__',0,0,60),
                ('server-a',7260,'GPU-a','alice',60,120000,60),
-               ('server-a',7320,'GPU-a','__racktop_coverage__',0,0,60),
+               ('server-a',7320,'GPU-a','__gpudeck_coverage__',0,0,60),
                ('server-a',7320,'GPU-a','alice',60,180000,60);"
         ).unwrap();
 
@@ -4464,7 +4464,7 @@ mod tests {
             [], |row| Ok((row.get(0)?,row.get(1)?,row.get(2)?)),
         ).unwrap();
         assert_eq!(row, (120, 300_000.0, 120));
-        let coverage: i64 = connection.query_row("SELECT coverage_seconds FROM usage_buckets WHERE timestamp=7200 AND username='__racktop_coverage__'", [], |row| row.get(0)).unwrap();
+        let coverage: i64 = connection.query_row("SELECT coverage_seconds FROM usage_buckets WHERE timestamp=7200 AND username='__gpudeck_coverage__'", [], |row| row.get(0)).unwrap();
         assert_eq!(coverage, 120);
         let remote_minutes: i64 = connection
             .query_row("SELECT COUNT(*) FROM remote_usage_minutes", [], |row| {

@@ -1,5 +1,5 @@
 [package]
-name = "racktop-domain"
+name = "gpudeck-domain"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

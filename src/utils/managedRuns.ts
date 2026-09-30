@@ -1,7 +1,7 @@
 import type { LaunchProfile, ManagedRun, Snapshot } from '../types/models'
 
-const PROFILE_KEY = 'racktop.launchProfiles.v1'
-const RUN_KEY = 'racktop.managedRuns.v1'
+const PROFILE_KEY = 'gpudeck.launchProfiles.v1'
+const RUN_KEY = 'gpudeck.managedRuns.v1'
 const MAX_RECENT_RUNS = 60
 
 function parseArray<T>(key: string): T[] {

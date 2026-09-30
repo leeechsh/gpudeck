@@ -1,4 +1,4 @@
-use racktop_lib::{collector, models::{Server, Snapshot}};
+use gpudeck_lib::{collector, models::{Server, Snapshot}};
 
 #[tokio::main]
 async fn main() {

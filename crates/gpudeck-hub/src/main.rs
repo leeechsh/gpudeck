@@ -22,7 +22,7 @@ async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "racktop_hub=info,tower_http=info".into()),
+                .unwrap_or_else(|_| "gpudeck_hub=info,tower_http=info".into()),
         )
         .init();
 
@@ -36,10 +36,10 @@ async fn main() -> anyhow::Result<()> {
 
     let state = Arc::new(AppState {
         pool,
-        public_url: env::var("RACKTOP_PUBLIC_URL")
+        public_url: env::var("GPUDECK_PUBLIC_URL")
             .unwrap_or_else(|_| "http://127.0.0.1:1420".into()),
         wecom_webhook: env::var("WECOM_WEBHOOK_URL").ok(),
-        secure_cookie: env::var("RACKTOP_SECURE_COOKIE").map_or(true, |value| value != "false"),
+        secure_cookie: env::var("GPUDECK_SECURE_COOKIE").map_or(true, |value| value != "false"),
     });
     worker::spawn(state.clone());
 
@@ -49,11 +49,11 @@ async fn main() -> anyhow::Result<()> {
         .layer(TraceLayer::new_for_http())
         .with_state(state);
 
-    let address: SocketAddr = env::var("RACKTOP_LISTEN")
+    let address: SocketAddr = env::var("GPUDECK_LISTEN")
         .unwrap_or_else(|_| "0.0.0.0:8080".into())
         .parse()?;
     let listener = tokio::net::TcpListener::bind(address).await?;
-    info!(%address, "RackTop Hub listening");
+    info!(%address, "GPUDeck Hub listening");
     axum::serve(listener, app).await?;
     Ok(())
 }

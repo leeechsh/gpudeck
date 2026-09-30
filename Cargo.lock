@@ -1253,12 +1253,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f8dcc9c7d52a811697d2151c701e0d08956f92b0e24136cf4cf27b57a6a0d9bf"
 
 [[package]]
-name = "racktop-agent"
-version = "1.29.0"
+name = "gpudeck-agent"
+version = "2.0.0"
 dependencies = [
  "anyhow",
  "chrono",
- "racktop-domain",
+ "gpudeck-domain",
  "reqwest",
  "serde",
  "tokio",
@@ -1268,8 +1268,8 @@ dependencies = [
 ]
 
 [[package]]
-name = "racktop-domain"
-version = "1.29.0"
+name = "gpudeck-domain"
+version = "2.0.0"
 dependencies = [
  "chrono",
  "serde",
@@ -1278,8 +1278,8 @@ dependencies = [
 ]
 
 [[package]]
-name = "racktop-hub"
-version = "1.29.0"
+name = "gpudeck-hub"
+version = "2.0.0"
 dependencies = [
  "anyhow",
  "argon2",
@@ -1288,7 +1288,7 @@ dependencies = [
  "chrono",
  "hex",
  "http",
- "racktop-domain",
+ "gpudeck-domain",
  "rand 0.9.5",
  "reqwest",
  "secrecy",

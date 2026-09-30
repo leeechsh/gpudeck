@@ -7,7 +7,7 @@ describe('ManagedProcessView layout boundary', () => {
   it('moves a missing remote run out of the active list instead of waiting forever', () => {
     const run: ManagedRun = {
       id: 'run', profileId: null, name: 'Training', projectId: null, serverId: 'server', gpuUuids: [], gpuIndices: [],
-      workingDirectory: '/workspace', command: 'python train.py', pid: 1394031, logPath: '~/.racktop/runs/run/output.log', startedAt: 1, status: 'running',
+      workingDirectory: '/workspace', command: 'python train.py', pid: 1394031, logPath: '~/.gpudeck/runs/run/output.log', startedAt: 1, status: 'running',
     }
 
     expect(managedRunAfterRemoteStatus(run, { status: 'unknown', exitCode: null }, 100)).toMatchObject({ status: 'failed', endedAt: 100 })

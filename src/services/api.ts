@@ -4,13 +4,13 @@ import { isPermissionGranted, onAction, requestPermission, sendNotification } fr
 import type { AppSettings, HistoryHeatmapPoint, HistoryPoint, HostKeyInfo, IdleReservation, InteractionLogSummary, InteractionServerSummary, ManagedRunLaunchResult, ManagedRunRemoteStatus, Project, ProjectDraft, ProjectPathCheck, ProjectSyncProgress, ProjectSyncResult, RemoteCleanupResult, RemoteCleanupSweepResult, RemoteHistorySyncResult, Server, ServerDraft, ServerNotificationSettings, Snapshot, UsageDistribution } from '../types/models'
 import { clampPercent, gpuMemoryPercent, hasOtherUserGpuWorkload } from '../utils/gpu'
 import { normalizeIdleFilters } from '../utils/idleFilters'
-import { RACKTOP_MANAGED_IDENTITY_PATH } from '../utils/sshSetup'
+import { GPUDECK_MANAGED_IDENTITY_PATH } from '../utils/sshSetup'
 import type { ReleaseInfo } from '../utils/updateCheck'
 import { hubApi } from '../hub/api'
 import type { Node as HubNode } from '../hub/api'
 
 const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window
-const isHubWeb = !isTauri && import.meta.env.MODE !== 'test' && import.meta.env.VITE_RACKTOP_HUB !== 'false'
+const isHubWeb = !isTauri && import.meta.env.MODE !== 'test' && import.meta.env.VITE_GPUDECK_HUB !== 'false'
 
 const now = Math.floor(Date.now() / 1000)
 const demoServers: Server[] = [
@@ -27,7 +27,7 @@ const demoServers: Server[] = [
     remoteHistoryEnabled: false,
     sortOrder: 0,
     authMethod: 'privateKey',
-    identityFile: RACKTOP_MANAGED_IDENTITY_PATH,
+    identityFile: GPUDECK_MANAGED_IDENTITY_PATH,
     status: 'online',
     lastSeenAt: now,
   },
@@ -44,7 +44,7 @@ const demoServers: Server[] = [
     remoteHistoryEnabled: false,
     sortOrder: 1,
     authMethod: 'privateKey',
-    identityFile: RACKTOP_MANAGED_IDENTITY_PATH,
+    identityFile: GPUDECK_MANAGED_IDENTITY_PATH,
     status: 'online',
     lastSeenAt: now,
   },
@@ -402,7 +402,7 @@ export const api = {
     browserServers = [...browserServers].sort((left, right) => (order.get(left.id) ?? Number.MAX_SAFE_INTEGER) - (order.get(right.id) ?? Number.MAX_SAFE_INTEGER)).map((server, index) => ({ ...server, sortOrder: index }))
   },
   async startTerminal(serverId: string, columns: number, rows: number, gpuIndex?: number, acceleratorVendor: Snapshot['acceleratorVendor'] = 'nvidia'): Promise<string> {
-    if (!isTauri) throw new Error('终端仅在 RackTop 桌面 App 中可用')
+    if (!isTauri) throw new Error('终端仅在 GPUDeck 桌面 App 中可用')
     return invoke('start_terminal', { serverId, columns, rows, gpuIndex: gpuIndex ?? null, acceleratorVendor })
   },
   async writeTerminal(sessionId: string, data: string): Promise<void> {
@@ -426,7 +426,7 @@ export const api = {
       return snapshot
     }
     const server = browserServers.find((item) => item.id === serverId)
-    const remoteCommand = `RACKTOP_INCLUDE_PROCESSES=${includeProcesses ? 1 : 0} RACKTOP_INCLUDE_DISKS=${includeDisks ? 1 : 0}; export LANG=C LC_ALL=C; printf '__RACKTOP_USER__\\n'; id -un; printf '__RACKTOP_HOST__\\n'; hostname; head -n 1 /proc/stat; grep -E '^(MemTotal|MemAvailable|SwapTotal|SwapFree):' /proc/meminfo; nvidia-smi --query-gpu=index,name,uuid,utilization.gpu,utilization.memory,memory.used,memory.total,temperature.gpu,power.draw --format=csv,noheader,nounits; ps -eo user:64=,uid=,pid=,ppid=,pgid=,pcpu=,pmem=,rss=,etime=,args= --sort=-pcpu`
+    const remoteCommand = `GPUDECK_INCLUDE_PROCESSES=${includeProcesses ? 1 : 0} GPUDECK_INCLUDE_DISKS=${includeDisks ? 1 : 0}; export LANG=C LC_ALL=C; printf '__GPUDECK_USER__\\n'; id -un; printf '__GPUDECK_HOST__\\n'; hostname; head -n 1 /proc/stat; grep -E '^(MemTotal|MemAvailable|SwapTotal|SwapFree):' /proc/meminfo; nvidia-smi --query-gpu=index,name,uuid,utilization.gpu,utilization.memory,memory.used,memory.total,temperature.gpu,power.draw --format=csv,noheader,nounits; ps -eo user:64=,uid=,pid=,ppid=,pgid=,pcpu=,pmem=,rss=,etime=,args= --sort=-pcpu`
     const command = `ssh -o BatchMode=yes ${server?.username ?? 'user'}@${server?.host ?? 'host'} '${remoteCommand}'`
     const sentBytes = new TextEncoder().encode(command).length
     const startedAt = Date.now()
@@ -585,8 +585,8 @@ export const api = {
     return settings
   },
   async getLatestRelease(): Promise<ReleaseInfo> {
-    if (!isTauri) return { version: '1.25.2', url: 'https://github.com/Tongzh-SEU/RackTop/releases/tag/v1.25.2', publishedAt: new Date().toISOString() }
-    const response = await fetch('https://api.github.com/repos/Tongzh-SEU/RackTop/releases/latest', {
+    if (!isTauri) return { version: '1.25.2', url: 'https://github.com/leeechsh/gpudeck/releases/tag/v1.25.2', publishedAt: new Date().toISOString() }
+    const response = await fetch('https://api.github.com/repos/leeechsh/gpudeck/releases/latest', {
       headers: { Accept: 'application/vnd.github+json' },
     })
     if (!response.ok) throw new Error(`GitHub Release 检查失败（HTTP ${response.status}）`)
@@ -615,11 +615,11 @@ export const api = {
   async launchManagedRun(serverId: string, runId: string, workingDirectory: string, command: string, gpuIndices: number[], projectLogPath: string | null = null, acceleratorVendor: Snapshot['acceleratorVendor'] = 'nvidia'): Promise<ManagedRunLaunchResult> {
     if (isTauri) return invoke('launch_managed_run', { serverId, runId, workingDirectory, command, gpuIndices, projectLogPath, acceleratorVendor })
     await new Promise((resolve) => window.setTimeout(resolve, 500))
-    return { pid: 60_000 + Math.floor(Math.random() * 9_000), logPath: `~/.racktop/runs/${runId}/output.log` }
+    return { pid: 60_000 + Math.floor(Math.random() * 9_000), logPath: `~/.gpudeck/runs/${runId}/output.log` }
   },
   async readManagedRunLog(serverId: string, runId: string, lines = 400): Promise<string> {
     if (isTauri) return invoke('read_managed_run_log', { serverId, runId, lines })
-    return `[RackTop 演示日志]\nserver=${serverId}\nrun=${runId}\nstep 1840 · loss 0.8421\nstep 1841 · loss 0.8376`
+    return `[GPUDeck 演示日志]\nserver=${serverId}\nrun=${runId}\nstep 1840 · loss 0.8421\nstep 1841 · loss 0.8376`
   },
   async getManagedRunStatus(serverId: string, runId: string, pid: number): Promise<ManagedRunRemoteStatus> {
     if (isTauri) return invoke('get_managed_run_status', { serverId, runId, pid })

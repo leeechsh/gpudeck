@@ -10,6 +10,6 @@ document.documentElement.dataset.platform = detectAppPlatform(api.isDesktop, nav
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    {import.meta.env.VITE_RACKTOP_HUB === 'false' ? <App /> : <HubApp />}
+    {import.meta.env.VITE_GPUDECK_HUB === 'false' ? <App /> : <HubApp />}
   </StrictMode>,
 )

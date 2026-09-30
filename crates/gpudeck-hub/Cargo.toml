@@ -1,5 +1,5 @@
 [package]
-name = "racktop-hub"
+name = "gpudeck-hub"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -13,7 +13,7 @@ chrono.workspace = true
 hex.workspace = true
 http.workspace = true
 rand.workspace = true
-racktop-domain = { path = "../racktop-domain" }
+gpudeck-domain = { path = "../gpudeck-domain" }
 reqwest.workspace = true
 secrecy.workspace = true
 serde.workspace = true

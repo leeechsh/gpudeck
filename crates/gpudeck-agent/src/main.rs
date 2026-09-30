@@ -1,6 +1,6 @@
 use anyhow::{Context, bail};
 use chrono::Utc;
-use racktop_domain::{AgentSnapshot, GpuProcessTelemetry, GpuTelemetry};
+use gpudeck_domain::{AgentSnapshot, GpuProcessTelemetry, GpuTelemetry, SystemUserTelemetry};
 use reqwest::StatusCode;
 use std::{collections::HashMap, env, fs, process::Command, time::Duration};
 use tracing::{error, info};
@@ -11,17 +11,17 @@ async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "racktop_agent=info".into()),
+                .unwrap_or_else(|_| "gpudeck_agent=info".into()),
         )
         .init();
-    let hub_url = env::var("RACKTOP_HUB_URL")
-        .context("RACKTOP_HUB_URL is required")?
+    let hub_url = env::var("GPUDECK_HUB_URL")
+        .context("GPUDECK_HUB_URL is required")?
         .trim_end_matches('/')
         .to_string();
-    let token = env::var("RACKTOP_AGENT_TOKEN").context("RACKTOP_AGENT_TOKEN is required")?;
+    let token = env::var("GPUDECK_AGENT_TOKEN").context("GPUDECK_AGENT_TOKEN is required")?;
     let node_id =
-        Uuid::parse_str(&env::var("RACKTOP_NODE_ID").context("RACKTOP_NODE_ID is required")?)?;
-    let interval = env::var("RACKTOP_SAMPLE_SECONDS")
+        Uuid::parse_str(&env::var("GPUDECK_NODE_ID").context("GPUDECK_NODE_ID is required")?)?;
+    let interval = env::var("GPUDECK_SAMPLE_SECONDS")
         .ok()
         .and_then(|v| v.parse::<u64>().ok())
         .unwrap_or(5)
@@ -29,7 +29,7 @@ async fn main() -> anyhow::Result<()> {
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(10))
         .build()?;
-    info!(%node_id,%hub_url,interval,"RackTop Agent started");
+    info!(%node_id,%hub_url,interval,"GPUDeck Agent started");
     let mut sequence = Utc::now().timestamp_millis();
     loop {
         sequence = sequence.max(Utc::now().timestamp_millis()) + 1;
@@ -128,7 +128,35 @@ fn collect(node_id: Uuid, sequence: i64) -> anyhow::Result<AgentSnapshot> {
         memory_total_bytes,
         gpus,
         processes,
+        system_users: system_users(),
     })
+}
+
+fn system_users() -> Vec<SystemUserTelemetry> {
+    fs::read_to_string("/etc/passwd")
+        .unwrap_or_default()
+        .lines()
+        .filter_map(|line| {
+            let fields: Vec<_> = line.split(':').collect();
+            if fields.len() < 7 {
+                return None;
+            }
+            let uid = fields[2].parse::<i64>().ok()?;
+            let shell = fields[6].trim();
+            if uid < 1000
+                || uid == 65534
+                || shell.ends_with("/nologin")
+                || shell.ends_with("/false")
+            {
+                return None;
+            }
+            Some(SystemUserTelemetry {
+                username: fields[0].to_string(),
+                uid,
+                shell: shell.to_string(),
+            })
+        })
+        .collect()
 }
 
 fn run(program: &str, args: &[&str]) -> anyhow::Result<String> {
@@ -228,5 +256,14 @@ mod tests {
     #[test]
     fn rejects_bad_number() {
         assert!(parse::<i32>("N/A").is_err());
+    }
+    #[test]
+    fn filters_login_users() {
+        let users = system_users();
+        assert!(
+            users
+                .iter()
+                .all(|user| user.uid >= 1000 && !user.shell.ends_with("/nologin"))
+        );
     }
 }

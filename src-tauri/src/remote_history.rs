@@ -9,11 +9,11 @@ use std::collections::HashMap;
 use std::process::Stdio;
 use tokio::time::{Duration, timeout};
 
-const REMOTE_DIRECTORY: &str = "$HOME/.racktop";
+const REMOTE_DIRECTORY: &str = "$HOME/.gpudeck";
 const REMOTE_COLLECTOR_SCRIPT: &str = include_str!("../assets/remote-history-collector.sh");
 const REMOTE_DAEMON_SCRIPT: &str = include_str!("../assets/remote-history-daemon.sh");
 const REMOTE_REMOVE_SCRIPT: &str = r#"set -eu
-state=$HOME/.racktop
+state=$HOME/.gpudeck
 if [ -r "$state/.daemon.pid" ]; then
   pid="$(cat "$state/.daemon.pid" 2>/dev/null || true)"
   if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null && ps -p "$pid" -o args= 2>/dev/null | grep -F "$state/.daemon.sh" >/dev/null 2>&1; then
@@ -23,7 +23,7 @@ if [ -r "$state/.daemon.pid" ]; then
   fi
 fi
 rm -rf -- "$state"
-printf '__RACKTOP_REMOTE_HISTORY_REMOVED__\n'
+printf '__GPUDECK_REMOTE_HISTORY_REMOVED__\n'
 "#;
 
 pub async fn configure(server: &Server, password: Option<&str>) -> Result<(), String> {
@@ -44,14 +44,14 @@ pub async fn remove(
         run_remote_cleanup_command(server, password, &script, Duration::from_secs(8)).await?;
     if !output
         .lines()
-        .any(|line| line.trim() == "__RACKTOP_REMOTE_HISTORY_REMOVED__")
+        .any(|line| line.trim() == "__GPUDECK_REMOTE_HISTORY_REMOVED__")
     {
-        return Err("远端 RackTop 数据清理后未返回确认标记".into());
+        return Err("远端 GPUDeck 数据清理后未返回确认标记".into());
     }
     if managed_public_key.is_some()
         && !output
             .lines()
-            .any(|line| line.trim() == "__RACKTOP_SSH_ACCESS_REVOKED__")
+            .any(|line| line.trim() == "__GPUDECK_SSH_ACCESS_REVOKED__")
     {
         return Err("远端免密登录撤销后未返回确认标记".into());
     }
@@ -71,21 +71,21 @@ fn build_remove_script(managed_public_key: Option<&str>) -> Result<String, Strin
                     .bytes()
                     .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'+' | b'/' | b'='))
         })
-        .ok_or("RackTop 专用公钥格式无效，无法撤销免密登录")?;
+        .ok_or("GPUDeck 专用公钥格式无效，无法撤销免密登录")?;
     STANDARD
         .decode(key_blob)
-        .map_err(|_| "RackTop 专用公钥格式无效，无法撤销免密登录".to_string())?;
+        .map_err(|_| "GPUDeck 专用公钥格式无效，无法撤销免密登录".to_string())?;
     Ok(format!(
         r#"{REMOTE_REMOVE_SCRIPT}
 authorized_keys="$HOME/.ssh/authorized_keys"
 if [ -f "$authorized_keys" ]; then
   key_blob='{key_blob}'
-  temporary="$authorized_keys.racktop.$$"
+  temporary="$authorized_keys.gpudeck.$$"
   awk -v key="$key_blob" '{{ keep=1; for (i=1; i<NF; i++) if ($i ~ /^(ssh-|ecdsa-|sk-)/ && $(i+1) == key) keep=0; if (keep) print }}' "$authorized_keys" > "$temporary"
   chmod 600 "$temporary"
   mv "$temporary" "$authorized_keys"
 fi
-printf '__RACKTOP_SSH_ACCESS_REVOKED__\n'
+printf '__GPUDECK_SSH_ACCESS_REVOKED__\n'
 "#
     ))
 }
@@ -168,13 +168,13 @@ if [ "$running" -ne 1 ]; then
     exit 43
   fi
 fi
-printf '__RACKTOP_REMOTE_HISTORY_READY__\n'
+printf '__GPUDECK_REMOTE_HISTORY_READY__\n'
 "#
     );
     let output = run_remote_command(server, password, &script, Duration::from_secs(25)).await?;
     if output
         .lines()
-        .any(|line| line.trim() == "__RACKTOP_REMOTE_HISTORY_READY__")
+        .any(|line| line.trim() == "__GPUDECK_REMOTE_HISTORY_READY__")
     {
         Ok(())
     } else {
@@ -183,7 +183,7 @@ printf '__RACKTOP_REMOTE_HISTORY_READY__\n'
 }
 
 async fn disable(server: &Server, password: Option<&str>) -> Result<(), String> {
-    let script = r#"state=$HOME/.racktop
+    let script = r#"state=$HOME/.gpudeck
 if [ -r "$state/.daemon.pid" ]; then
   pid="$(cat "$state/.daemon.pid" 2>/dev/null || true)"
   if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null && ps -p "$pid" -o args= 2>/dev/null | grep -F "$state/.daemon.sh" >/dev/null 2>&1; then
@@ -191,12 +191,12 @@ if [ -r "$state/.daemon.pid" ]; then
   fi
   rm -f "$state/.daemon.pid"
 fi
-printf '__RACKTOP_REMOTE_HISTORY_DISABLED__\n'
+printf '__GPUDECK_REMOTE_HISTORY_DISABLED__\n'
 "#;
     let output = run_remote_command(server, password, script, Duration::from_secs(15)).await?;
     if output
         .lines()
-        .any(|line| line.trim() == "__RACKTOP_REMOTE_HISTORY_DISABLED__")
+        .any(|line| line.trim() == "__GPUDECK_REMOTE_HISTORY_DISABLED__")
     {
         Ok(())
     } else {
@@ -410,7 +410,7 @@ mod tests {
         assert!(REMOTE_COLLECTOR_SCRIPT.contains("2592000"));
         assert!(REMOTE_COLLECTOR_SCRIPT.contains("value=(total > 0 ?"));
         assert!(REMOTE_COLLECTOR_SCRIPT.contains("umask 077"));
-        assert!(REMOTE_COLLECTOR_SCRIPT.contains("$HOME/.racktop"));
+        assert!(REMOTE_COLLECTOR_SCRIPT.contains("$HOME/.gpudeck"));
         assert!(REMOTE_COLLECTOR_SCRIPT.contains(".history-v1.tsv"));
         assert!(REMOTE_DAEMON_SCRIPT.contains(".daemon.pid"));
         assert!(REMOTE_DAEMON_SCRIPT.contains(".client-heartbeat"));
@@ -429,7 +429,7 @@ mod tests {
         assert!(REMOTE_COLLECTOR_SCRIPT.contains("v2|%d"));
         assert!(REMOTE_COLLECTOR_SCRIPT.contains("now - 7200"));
         assert!(REMOTE_COLLECTOR_SCRIPT.contains(".usage-compacted-through-v2"));
-        assert!(REMOTE_COLLECTOR_SCRIPT.contains("__racktop_coverage__"));
+        assert!(REMOTE_COLLECTOR_SCRIPT.contains("__gpudeck_coverage__"));
         assert!(!REMOTE_COLLECTOR_SCRIPT.contains("command="));
         assert!(!REMOTE_COLLECTOR_SCRIPT.contains("args="));
     }
@@ -444,8 +444,8 @@ mod tests {
     }
 
     #[test]
-    fn remote_cleanup_script_targets_only_racktop_state() {
-        assert!(REMOTE_REMOVE_SCRIPT.contains("state=$HOME/.racktop"));
+    fn remote_cleanup_script_targets_only_gpudeck_state() {
+        assert!(REMOTE_REMOVE_SCRIPT.contains("state=$HOME/.gpudeck"));
         assert!(REMOTE_REMOVE_SCRIPT.contains("grep -F \"$state/.daemon.sh\""));
         assert!(REMOTE_REMOVE_SCRIPT.contains("kill -KILL \"$pid\""));
         assert!(REMOTE_REMOVE_SCRIPT.contains("rm -rf -- \"$state\""));
@@ -458,11 +458,11 @@ mod tests {
         let ssh_directory = directory.path().join(".ssh");
         std::fs::create_dir(&ssh_directory).unwrap();
         let authorized_keys = ssh_directory.join("authorized_keys");
-        let matching_blob = STANDARD.encode(b"racktop-key-material");
+        let matching_blob = STANDARD.encode(b"gpudeck-key-material");
         let other_blob = STANDARD.encode(b"another-key-material");
         let options_blob = STANDARD.encode(b"options-key-material");
         let original = format!(
-            "ssh-ed25519 {matching_blob} racktop-managed:old-comment\nssh-ed25519 {other_blob} racktop-managed:same-looking-comment\nfrom=\"10.0.0.0/8\",no-agent-forwarding ssh-ed25519 {options_blob} constrained-key\nssh-ed25519 {matching_blob} duplicate-racktop-entry\n\n"
+            "ssh-ed25519 {matching_blob} gpudeck-managed:old-comment\nssh-ed25519 {other_blob} gpudeck-managed:same-looking-comment\nfrom=\"10.0.0.0/8\",no-agent-forwarding ssh-ed25519 {options_blob} constrained-key\nssh-ed25519 {matching_blob} duplicate-gpudeck-entry\n\n"
         );
         std::fs::write(&authorized_keys, original).unwrap();
 
@@ -482,11 +482,11 @@ mod tests {
             "{}",
             String::from_utf8_lossy(&output.stderr)
         );
-        assert!(String::from_utf8_lossy(&output.stdout).contains("__RACKTOP_SSH_ACCESS_REVOKED__"));
+        assert!(String::from_utf8_lossy(&output.stdout).contains("__GPUDECK_SSH_ACCESS_REVOKED__"));
         let filtered = std::fs::read_to_string(authorized_keys).unwrap();
         assert!(!filtered.contains(&matching_blob));
         assert!(filtered.contains(&format!(
-            "ssh-ed25519 {other_blob} racktop-managed:same-looking-comment"
+            "ssh-ed25519 {other_blob} gpudeck-managed:same-looking-comment"
         )));
         assert!(filtered.contains(&format!(
             "from=\"10.0.0.0/8\",no-agent-forwarding ssh-ed25519 {options_blob} constrained-key"

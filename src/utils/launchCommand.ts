@@ -5,7 +5,7 @@ export type NormalizedLaunchCommand = {
   detectedProjectLogPath: string | null
   replacedCudaVisibleDevices: boolean
   removedNoHup: boolean
-  removedRackTopConflicts: boolean
+  removedGPUDeckConflicts: boolean
 }
 
 export type LaunchParameter = {
@@ -37,7 +37,7 @@ function detectProjectLogPath(command: string) {
 }
 
 /**
- * Keeps the user's workload commands, while removing shell setup RackTop owns.
+ * Keeps the user's workload commands, while removing shell setup GPUDeck owns.
  * This is intentionally conservative: arbitrary shell syntax remains untouched.
  */
 export function normalizeLaunchCommand(input: string): NormalizedLaunchCommand {
@@ -47,44 +47,44 @@ export function normalizeLaunchCommand(input: string): NormalizedLaunchCommand {
   let detectedProjectLogPath: string | null = null
   let removedNoHup = false
   let replacedCudaVisibleDevices = false
-  let removedRackTopConflicts = false
+  let removedGPUDeckConflicts = false
 
   command = command.replace(/^\s*cd\s+(?:--\s+)?((?:"[^"]*")|(?:'[^']*')|[^\s;&]+)\s*(?:&&\s*)?$/gm, (_match, directory: string) => {
     detectedWorkingDirectory ??= shellValue(directory)
-    removedRackTopConflicts = true
+    removedGPUDeckConflicts = true
     return ''
   })
   command = command.replace(/(^|\s)nohup\s+/g, (_match, prefix: string) => {
     removedNoHup = true
-    removedRackTopConflicts = true
+    removedGPUDeckConflicts = true
     return prefix
   })
   command = command.replace(/(^|[\s\\])CUDA_VISIBLE_DEVICES\s*=\s*("[^"]*"|'[^']*'|[^\s\\;]+)/g, (_match, prefix: string, devices: string) => {
     const parsed = shellValue(devices).split(',').map((value) => Number(value.trim())).filter((value) => Number.isInteger(value) && value >= 0)
     if (parsed.length > 0) detectedCudaVisibleDevices ??= parsed
     replacedCudaVisibleDevices = true
-    removedRackTopConflicts = true
+    removedGPUDeckConflicts = true
     return prefix
   })
   // `nohup env CUDA_VISIBLE_DEVICES=…` is a single wrapper. Once CUDA is
-  // owned by RackTop, remove its now-orphaned `env` while retaining user env vars.
+  // owned by GPUDeck, remove its now-orphaned `env` while retaining user env vars.
   if (replacedCudaVisibleDevices) {
     command = command.replace(/(^|\n)\s*env\s*(?:\\\s*)?(?:\n\s*)?(?=[A-Z_][A-Z0-9_]*=)/g, '$1')
   }
   command = command.replace(/^\s*echo\s+.*(?:\$!|launcher\.pid).*$(?:\n|$)/gim, () => {
-    removedRackTopConflicts = true
+    removedGPUDeckConflicts = true
     return ''
   })
   command = command.replace(/(?:\s+>\s*|(?:^|\n)\s*)("[^"]*"|'[^']*'|[^\s\n]+)\s+2>&1\s*&?(?=\s*(?:\n|$))/g, (_match, logPath: string) => {
     detectedProjectLogPath ??= shellValue(logPath)
-    removedRackTopConflicts = true
+    removedGPUDeckConflicts = true
     return ''
   })
   detectedProjectLogPath ??= detectProjectLogPath(command)
   command = command.replace(/\\\s*(?=\n\s*(?:\n|$))/g, '')
   command = command.replace(/^\s*\n|\n\s*$/g, '').replace(/\n{3,}/g, '\n\n').trim()
 
-  return { command, detectedWorkingDirectory, detectedCudaVisibleDevices, detectedProjectLogPath, replacedCudaVisibleDevices, removedNoHup, removedRackTopConflicts }
+  return { command, detectedWorkingDirectory, detectedCudaVisibleDevices, detectedProjectLogPath, replacedCudaVisibleDevices, removedNoHup, removedGPUDeckConflicts }
 }
 
 /** Resolves simple leading shell variables used in an extracted project log path. */
@@ -102,7 +102,7 @@ export function launchCommandPreview(workingDirectory: string, command: string, 
   return `cd -- ${workingDirectory}\nCUDA_VISIBLE_DEVICES=${gpuCsv} \\\n${command}`
 }
 
-/** Replaces RackTop-owned context in a copied command without discarding its structure. */
+/** Replaces GPUDeck-owned context in a copied command without discarding its structure. */
 export function replaceLaunchContext(command: string, workingDirectory: string, gpuIndices: number[]) {
   const gpuCsv = gpuIndices.join(',')
   let preview = command.trim()

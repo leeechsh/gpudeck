@@ -2,11 +2,11 @@ FROM rust:1.98-bookworm AS build
 WORKDIR /src
 COPY Cargo.toml Cargo.lock ./
 COPY crates ./crates
-RUN cargo build --locked --release -p racktop-hub
+RUN cargo build --locked --release -p gpudeck-hub
 
 FROM debian:bookworm-slim
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates && rm -rf /var/lib/apt/lists/*
-COPY --from=build /src/target/release/racktop-hub /usr/local/bin/racktop-hub
+COPY --from=build /src/target/release/gpudeck-hub /usr/local/bin/gpudeck-hub
 COPY deploy/hub-entrypoint.sh /usr/local/bin/hub-entrypoint
 USER 65532:65532
 ENTRYPOINT ["/usr/local/bin/hub-entrypoint"]

@@ -4,7 +4,7 @@ import { processBelongsToManagedRun, projectPathOnServer, projectWorkingDirector
 
 const run: ManagedRun = {
   id: 'run-1', name: '训练', serverId: 's1', gpuUuids: ['g0'], gpuIndices: [0], workingDirectory: '~/project',
-  command: 'python train.py --config a100.yaml', pid: 4000, logPath: '~/.racktop/runs/run-1/output.log', startedAt: 1, status: 'running',
+  command: 'python train.py --config a100.yaml', pid: 4000, logPath: '~/.gpudeck/runs/run-1/output.log', startedAt: 1, status: 'running',
 }
 
 describe('managed runs', () => {

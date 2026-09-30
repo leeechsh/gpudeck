@@ -70,7 +70,7 @@ pub fn trust(server: &Server, info: &HostKeyInfo) -> Result<(), String> {
         return Err("Host Key 与目标服务器不匹配".into());
     }
     if info.changed {
-        return Err("Host Key 已发生变化。为防止中间人攻击，RackTop 不会覆盖现有密钥；请先通过可信渠道核实并手动更新 known_hosts。".into());
+        return Err("Host Key 已发生变化。为防止中间人攻击，GPUDeck 不会覆盖现有密钥；请先通过可信渠道核实并手动更新 known_hosts。".into());
     }
     let verified = parse_line(&server.id, &server.host, &info.key_line)?;
     if verified.fingerprint != info.fingerprint {

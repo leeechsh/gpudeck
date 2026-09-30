@@ -116,7 +116,7 @@ fn sync_checkpoint_signature(source_signature: &str, target_signature: &str) -> 
 
 fn resume_checkpoint_offset(output: &str, expected_signature: &str) -> Option<u64> {
     output.lines().find_map(|line| {
-        let fields = line.strip_prefix("__RACKTOP_CHECKPOINT__\t")?.split_once('\t')?;
+        let fields = line.strip_prefix("__GPUDECK_CHECKPOINT__\t")?.split_once('\t')?;
         (fields.0 == expected_signature).then(|| fields.1.parse::<u64>().ok()).flatten()
     })
 }
@@ -124,7 +124,7 @@ fn resume_checkpoint_offset(output: &str, expected_signature: &str) -> Option<u6
 fn resume_checkpoint_script(target_path: &str, artifact_id: &str) -> String {
     let target_path = shell_quote(target_path);
     let expand_target = remote_home_expansion("target");
-    format!(r#"target={target_path}; {expand_target}; parent="${{target%/*}}"; [ "$parent" = "$target" ] && parent="$HOME"; part="$parent/.racktop-sync-{artifact_id}.part"; meta="$parent/.racktop-sync-{artifact_id}.meta"; stored="$(cat "$meta" 2>/dev/null)"; offset="$(stat -c '%s' "$part" 2>/dev/null)"; printf '__RACKTOP_CHECKPOINT__\t%s\t%s\n' "$stored" "${{offset:-0}}""#)
+    format!(r#"target={target_path}; {expand_target}; parent="${{target%/*}}"; [ "$parent" = "$target" ] && parent="$HOME"; part="$parent/.gpudeck-sync-{artifact_id}.part"; meta="$parent/.gpudeck-sync-{artifact_id}.meta"; stored="$(cat "$meta" 2>/dev/null)"; offset="$(stat -c '%s' "$part" 2>/dev/null)"; printf '__GPUDECK_CHECKPOINT__\t%s\t%s\n' "$stored" "${{offset:-0}}""#)
 }
 
 fn target_changed_since_sync(target: &crate::models::ProjectTarget, check: &ProjectPathCheck) -> bool {
@@ -141,7 +141,7 @@ fn target_changed_since_sync(target: &crate::models::ProjectTarget, check: &Proj
 }
 
 fn target_signature_guard(expected: &str) -> String {
-    format!(r#"current_signature() {{ if [ ! -e "$target" ]; then printf '0:0:0:0:0'; elif [ -d "$target" ]; then stats="$(find "$target" -printf '%y\t%s\t%T@\n' 2>/dev/null | awk -F '\t' 'BEGIN {{ files=0; bytes=0; latest=0 }} {{ if ($1 == "f") {{ files += 1; bytes += $2 }} value=int($3); if (value > latest) latest=value }} END {{ printf "%d:%d:%d", bytes, files, latest }}')"; printf '1:1:%s' "$stats"; else bytes="$(stat -c '%s' "$target" 2>/dev/null)"; modified="$(stat -c '%Y' "$target" 2>/dev/null)"; printf '1:0:%s:1:%s' "${{bytes:-0}}" "${{modified:-0}}"; fi; }}; before="$(current_signature)"; if [ "$before" != {expected} ]; then printf 'RackTop: 目标目录在同步期间发生修改\n' >&2; exit 75; fi;"#, expected = shell_quote(expected))
+    format!(r#"current_signature() {{ if [ ! -e "$target" ]; then printf '0:0:0:0:0'; elif [ -d "$target" ]; then stats="$(find "$target" -printf '%y\t%s\t%T@\n' 2>/dev/null | awk -F '\t' 'BEGIN {{ files=0; bytes=0; latest=0 }} {{ if ($1 == "f") {{ files += 1; bytes += $2 }} value=int($3); if (value > latest) latest=value }} END {{ printf "%d:%d:%d", bytes, files, latest }}')"; printf '1:1:%s' "$stats"; else bytes="$(stat -c '%s' "$target" 2>/dev/null)"; modified="$(stat -c '%Y' "$target" 2>/dev/null)"; printf '1:0:%s:1:%s' "${{bytes:-0}}" "${{modified:-0}}"; fi; }}; before="$(current_signature)"; if [ "$before" != {expected} ]; then printf 'GPUDeck: 目标目录在同步期间发生修改\n' >&2; exit 75; fi;"#, expected = shell_quote(expected))
 }
 
 fn target_publish_script(target_path: &str, artifact_id: &str, expected_target_signature: &str, is_directory: bool, source_size: u64) -> String {
@@ -149,9 +149,9 @@ fn target_publish_script(target_path: &str, artifact_id: &str, expected_target_s
     let expand_target = remote_home_expansion("target");
     let signature_guard = target_signature_guard(expected_target_signature);
     if is_directory {
-        format!(r#"target={target_path}; {expand_target}; parent="${{target%/*}}"; [ "$parent" = "$target" ] && parent="$HOME"; part="$parent/.racktop-sync-{artifact_id}.part"; meta="$parent/.racktop-sync-{artifact_id}.meta"; stage="$parent/.racktop-sync-{artifact_id}.stage"; backup="$parent/.racktop-sync-{artifact_id}.backup"; published=0; cleanup() {{ code=$?; rm -rf -- "$stage"; if [ "$published" = 0 ] && [ -e "$backup" ] && [ ! -e "$target" ]; then mv -- "$backup" "$target"; elif [ "$published" = 1 ]; then rm -rf -- "$backup"; fi; exit "$code"; }}; trap cleanup EXIT HUP INT TERM; cat >> "$part"; rm -rf -- "$stage"; mkdir -p "$stage"; tar -xf "$part" -C "$stage"; {signature_guard} [ ! -e "$target" ] || mv -- "$target" "$backup"; mv -- "$stage" "$target"; published=1; rm -rf -- "$backup"; rm -f -- "$part" "$meta""#)
+        format!(r#"target={target_path}; {expand_target}; parent="${{target%/*}}"; [ "$parent" = "$target" ] && parent="$HOME"; part="$parent/.gpudeck-sync-{artifact_id}.part"; meta="$parent/.gpudeck-sync-{artifact_id}.meta"; stage="$parent/.gpudeck-sync-{artifact_id}.stage"; backup="$parent/.gpudeck-sync-{artifact_id}.backup"; published=0; cleanup() {{ code=$?; rm -rf -- "$stage"; if [ "$published" = 0 ] && [ -e "$backup" ] && [ ! -e "$target" ]; then mv -- "$backup" "$target"; elif [ "$published" = 1 ]; then rm -rf -- "$backup"; fi; exit "$code"; }}; trap cleanup EXIT HUP INT TERM; cat >> "$part"; rm -rf -- "$stage"; mkdir -p "$stage"; tar -xf "$part" -C "$stage"; {signature_guard} [ ! -e "$target" ] || mv -- "$target" "$backup"; mv -- "$stage" "$target"; published=1; rm -rf -- "$backup"; rm -f -- "$part" "$meta""#)
     } else {
-        format!(r#"target={target_path}; {expand_target}; parent="${{target%/*}}"; [ "$parent" = "$target" ] && parent="$HOME"; part="$parent/.racktop-sync-{artifact_id}.part"; meta="$parent/.racktop-sync-{artifact_id}.meta"; backup="$parent/.racktop-sync-{artifact_id}.backup"; published=0; cleanup() {{ code=$?; if [ "$published" = 0 ] && [ -e "$backup" ] && [ ! -e "$target" ]; then mv -- "$backup" "$target"; elif [ "$published" = 1 ]; then rm -rf -- "$backup"; fi; exit "$code"; }}; trap cleanup EXIT HUP INT TERM; cat >> "$part"; actual="$(stat -c '%s' "$part" 2>/dev/null)"; if [ "${{actual:-0}}" -ne {source_size} ]; then printf 'RackTop: 传输文件大小校验失败\n' >&2; exit 76; fi; {signature_guard} [ ! -e "$target" ] || mv -- "$target" "$backup"; mv -- "$part" "$target"; published=1; rm -rf -- "$backup"; rm -f -- "$meta""#)
+        format!(r#"target={target_path}; {expand_target}; parent="${{target%/*}}"; [ "$parent" = "$target" ] && parent="$HOME"; part="$parent/.gpudeck-sync-{artifact_id}.part"; meta="$parent/.gpudeck-sync-{artifact_id}.meta"; backup="$parent/.gpudeck-sync-{artifact_id}.backup"; published=0; cleanup() {{ code=$?; if [ "$published" = 0 ] && [ -e "$backup" ] && [ ! -e "$target" ]; then mv -- "$backup" "$target"; elif [ "$published" = 1 ]; then rm -rf -- "$backup"; fi; exit "$code"; }}; trap cleanup EXIT HUP INT TERM; cat >> "$part"; actual="$(stat -c '%s' "$part" 2>/dev/null)"; if [ "${{actual:-0}}" -ne {source_size} ]; then printf 'GPUDeck: 传输文件大小校验失败\n' >&2; exit 76; fi; {signature_guard} [ ! -e "$target" ] || mv -- "$target" "$backup"; mv -- "$part" "$target"; published=1; rm -rf -- "$backup"; rm -f -- "$meta""#)
     }
 }
 
@@ -268,14 +268,14 @@ async fn remote_input(server: &crate::models::Server, password: Option<&str>, sc
 
 fn delta_list_write_script(target_path: &str, artifact_id: &str, suffix: &str) -> String {
     let expand_target = remote_home_expansion("target");
-    format!(r#"target={}; {}; parent="${{target%/*}}"; [ "$parent" = "$target" ] && parent="$HOME"; mkdir -p "$parent"; cat > "$parent/.racktop-sync-{}.{}""#, shell_quote(target_path), expand_target, artifact_id, suffix)
+    format!(r#"target={}; {}; parent="${{target%/*}}"; [ "$parent" = "$target" ] && parent="$HOME"; mkdir -p "$parent"; cat > "$parent/.gpudeck-sync-{}.{}""#, shell_quote(target_path), expand_target, artifact_id, suffix)
 }
 
 fn target_delta_publish_script(target_path: &str, artifact_id: &str, expected_target_signature: &str) -> String {
     let target_path = shell_quote(target_path);
     let expand_target = remote_home_expansion("target");
     let signature_guard = target_signature_guard(expected_target_signature);
-    format!(r#"target={target_path}; {expand_target}; parent="${{target%/*}}"; [ "$parent" = "$target" ] && parent="$HOME"; part="$parent/.racktop-sync-{artifact_id}.part"; meta="$parent/.racktop-sync-{artifact_id}.meta"; remove="$parent/.racktop-sync-{artifact_id}.remove"; replace="$parent/.racktop-sync-{artifact_id}.replace"; stage="$parent/.racktop-sync-{artifact_id}.stage"; backup="$parent/.racktop-sync-{artifact_id}.backup"; published=0; cleanup() {{ code=$?; rm -rf -- "$stage"; if [ "$published" = 0 ] && [ -e "$backup" ] && [ ! -e "$target" ]; then mv -- "$backup" "$target"; elif [ "$published" = 1 ]; then rm -rf -- "$backup"; fi; exit "$code"; }}; trap cleanup EXIT HUP INT TERM; cat >> "$part"; rm -rf -- "$stage"; mkdir -p "$stage"; [ ! -d "$target" ] || cp -al -- "$target"/. "$stage"/; (cd "$stage" && xargs -0 -r rm -rf -- < "$remove" && xargs -0 -r rm -rf -- < "$replace"); tar -xf "$part" -C "$stage"; {signature_guard} [ ! -e "$target" ] || mv -- "$target" "$backup"; mv -- "$stage" "$target"; published=1; rm -rf -- "$backup"; rm -f -- "$part" "$meta" "$remove" "$replace""#)
+    format!(r#"target={target_path}; {expand_target}; parent="${{target%/*}}"; [ "$parent" = "$target" ] && parent="$HOME"; part="$parent/.gpudeck-sync-{artifact_id}.part"; meta="$parent/.gpudeck-sync-{artifact_id}.meta"; remove="$parent/.gpudeck-sync-{artifact_id}.remove"; replace="$parent/.gpudeck-sync-{artifact_id}.replace"; stage="$parent/.gpudeck-sync-{artifact_id}.stage"; backup="$parent/.gpudeck-sync-{artifact_id}.backup"; published=0; cleanup() {{ code=$?; rm -rf -- "$stage"; if [ "$published" = 0 ] && [ -e "$backup" ] && [ ! -e "$target" ]; then mv -- "$backup" "$target"; elif [ "$published" = 1 ]; then rm -rf -- "$backup"; fi; exit "$code"; }}; trap cleanup EXIT HUP INT TERM; cat >> "$part"; rm -rf -- "$stage"; mkdir -p "$stage"; [ ! -d "$target" ] || cp -al -- "$target"/. "$stage"/; (cd "$stage" && xargs -0 -r rm -rf -- < "$remove" && xargs -0 -r rm -rf -- < "$replace"); tar -xf "$part" -C "$stage"; {signature_guard} [ ! -e "$target" ] || mv -- "$target" "$backup"; mv -- "$stage" "$target"; published=1; rm -rf -- "$backup"; rm -f -- "$part" "$meta" "$remove" "$replace""#)
 }
 
 async fn stop_child(child: &mut Child) {
@@ -286,7 +286,7 @@ async fn stop_child(child: &mut Child) {
 async fn wait_child_with_cancel(child: &mut Child, cancel: &AtomicBool) -> Result<std::process::ExitStatus, String> {
     loop {
         if cancel.load(Ordering::Acquire) {
-            return Err("__RACKTOP_PAUSED__".into());
+            return Err("__GPUDECK_PAUSED__".into());
         }
         if let Some(status) = child.try_wait().map_err(|error| error.to_string())? {
             return Ok(status);
@@ -311,7 +311,7 @@ pub async fn check_path(server: &crate::models::Server, password: Option<&str>, 
     let script = format!(r#"requested={requested}; name={name};
 {expand_requested}
 if [ "$requested" = / ] || [ "$requested" = "$HOME" ]; then
-  printf 'RackTop: 不允许使用根目录或 Home 根目录\n' >&2
+  printf 'GPUDeck: 不允许使用根目录或 Home 根目录\n' >&2
   exit 64
 fi
 if [ ! -e "$requested" ]; then
@@ -332,13 +332,13 @@ EOF
   fi
   [ -n "$modified" ] || modified="$(stat -c '%Y' "$requested" 2>/dev/null)"; modified="${{modified:-0}}"
   bytes="${{bytes:-0}}"
-  printf '__RACKTOP_PATH__\tfound\t%s\t%s\t%s\t%s\n' "$kind" "$bytes" "$files" "$modified"
-  printf '__RACKTOP_RESOLVED__\t%s\n' "$requested"
+  printf '__GPUDECK_PATH__\tfound\t%s\t%s\t%s\t%s\n' "$kind" "$bytes" "$files" "$modified"
+  printf '__GPUDECK_RESOLVED__\t%s\n' "$requested"
 else
-  printf '__RACKTOP_PATH__\tmissing\tunknown\t0\t0\n'
-  printf '__RACKTOP_RESOLVED__\t%s\n' "$requested"
+  printf '__GPUDECK_PATH__\tmissing\tunknown\t0\t0\n'
+  printf '__GPUDECK_RESOLVED__\t%s\n' "$requested"
 fi
-printf '%s\n' "$matches" | while IFS= read -r match; do [ -z "$match" ] || printf '__RACKTOP_MATCH__\t%s\n' "$match"; done"#, requested = shell_quote(requested_path), name = shell_quote(basename));
+printf '%s\n' "$matches" | while IFS= read -r match; do [ -z "$match" ] || printf '__GPUDECK_MATCH__\t%s\n' "$match"; done"#, requested = shell_quote(requested_path), name = shell_quote(basename));
     match remote_output(server, password, script, 20).await {
         Ok(output) => {
             let mut exists = false;
@@ -351,15 +351,15 @@ printf '%s\n' "$matches" | while IFS= read -r match; do [ -z "$match" ] || print
             for line in output.lines() {
                 let fields: Vec<_> = line.split('\t').collect();
                 match fields.first().copied() {
-                    Some("__RACKTOP_PATH__") => {
+                    Some("__GPUDECK_PATH__") => {
                         exists = fields.get(1) == Some(&"found");
                         is_directory = fields.get(2) == Some(&"directory");
                         size_bytes = fields.get(3).and_then(|value| value.parse().ok()).unwrap_or(0);
                         file_count = fields.get(4).and_then(|value| value.parse().ok()).unwrap_or(0);
                         modified_at = fields.get(5).and_then(|value| value.parse::<i64>().ok()).filter(|value| *value > 0);
                     }
-                    Some("__RACKTOP_RESOLVED__") => suggested_path = fields.get(1).copied().unwrap_or(requested_path).to_string(),
-                    Some("__RACKTOP_MATCH__") => if let Some(value) = fields.get(1) { matches.push((*value).to_string()); },
+                    Some("__GPUDECK_RESOLVED__") => suggested_path = fields.get(1).copied().unwrap_or(requested_path).to_string(),
+                    Some("__GPUDECK_MATCH__") => if let Some(value) = fields.get(1) { matches.push((*value).to_string()); },
                     _ => {}
                 }
             }
@@ -384,13 +384,13 @@ find "$parent" -maxdepth 1 -mindepth 1 -type d -print 2>/dev/null | sort | while
   case "$base" in "$prefix"*) ;; *) continue ;; esac
   case "$prefix:$base" in .*:*) ;; *:.*) continue ;; esac
   case "$mode" in home) display="~/${{match#"$HOME"/}}" ;; relative) display="${{match#"$HOME"/}}" ;; *) display="$match" ;; esac
-  printf '__RACKTOP_SUGGEST__\t%s\n' "$display"
+  printf '__GPUDECK_SUGGEST__\t%s\n' "$display"
 done | head -n 12"#, query = shell_quote(query))
 }
 
 pub async fn suggest_paths(server: &crate::models::Server, password: Option<&str>, query: &str) -> Result<Vec<String>, String> {
     let script = suggestion_script(query);
-    Ok(remote_output(server, password, script, 12).await?.lines().filter_map(|line| line.strip_prefix("__RACKTOP_SUGGEST__\t").map(str::to_string)).collect())
+    Ok(remote_output(server, password, script, 12).await?.lines().filter_map(|line| line.strip_prefix("__GPUDECK_SUGGEST__\t").map(str::to_string)).collect())
 }
 
 async fn validate_same_server_paths(server: &crate::models::Server, password: Option<&str>, source_path: &str, target_path: &str) -> Result<(), String> {
@@ -399,10 +399,10 @@ async fn validate_same_server_paths(server: &crate::models::Server, password: Op
     let script = format!(r#"source={source}; target={target}; {expand_source}; {expand_target};
 source="$(readlink -m -- "$source")"; target="$(readlink -m -- "$target")"
 if [ "$source" = / ] || [ "$source" = "$HOME" ] || [ "$target" = / ] || [ "$target" = "$HOME" ]; then
-  printf 'RackTop: 不允许使用根目录或 Home 根目录\n' >&2; exit 64
+  printf 'GPUDeck: 不允许使用根目录或 Home 根目录\n' >&2; exit 64
 fi
-case "$target/" in "$source/"*) printf 'RackTop: 目标目录不能位于主目录内\n' >&2; exit 64 ;; esac
-case "$source/" in "$target/"*) printf 'RackTop: 主目录不能位于目标目录内\n' >&2; exit 64 ;; esac"#,
+case "$target/" in "$source/"*) printf 'GPUDeck: 目标目录不能位于主目录内\n' >&2; exit 64 ;; esac
+case "$source/" in "$target/"*) printf 'GPUDeck: 主目录不能位于目标目录内\n' >&2; exit 64 ;; esac"#,
         source = shell_quote(source_path), target = shell_quote(target_path));
     remote_output(server, password, script, 12).await.map(|_| ())
 }
@@ -529,7 +529,7 @@ pub async fn sync(database: &Database, project: &Project, target_server_id: &str
         let resumable = target.status == "paused" && resume_checkpoint_offset(&checkpoint, &checkpoint_signature).is_some();
         let delta_is_additive_only = delta_plan.as_ref().is_some_and(|(delta, _)| delta_can_sync_without_confirmation(delta));
         if target_check_before.exists && target_changed_since_sync(target, &target_check_before) && !force && !resumable && !delta_is_additive_only {
-            return Err("__RACKTOP_CONFLICT__:目标目录已有内容或已在上次同步后修改".into());
+            return Err("__GPUDECK_CONFLICT__:目标目录已有内容或已在上次同步后修改".into());
         }
         if let Some((delta, _)) = &delta_plan {
             remote_input(&target_server, target_password.as_deref(), delta_list_write_script(&target.path, &artifact_id, "remove"), nul_path_list(&delta.remove_paths), 60).await?;
@@ -537,9 +537,9 @@ pub async fn sync(database: &Database, project: &Project, target_server_id: &str
         }
         let payload_size = delta_plan.as_ref().map(|(delta, _)| delta.payload_bytes).unwrap_or(source_check.size_bytes);
         update_sync_total(&target_key, payload_size.max(1));
-        let prepare_script = format!(r#"target={target_path}; {expand_target}; parent="${{target%/*}}"; [ "$parent" = "$target" ] && parent="$HOME"; [ "$target" != / ] && [ "$target" != "$HOME" ] || {{ printf 'RackTop: 不允许使用根目录或 Home 根目录\n' >&2; exit 64; }}; mkdir -p "$parent"; part="$parent/.racktop-sync-{artifact_id}.part"; meta="$parent/.racktop-sync-{artifact_id}.meta"; backup="$parent/.racktop-sync-{artifact_id}.backup"; [ -e "$target" ] || [ ! -e "$backup" ] || mv -- "$backup" "$target"; signature={signature}; stored="$(cat "$meta" 2>/dev/null)"; if [ "$stored" != "$signature" ]; then rm -f -- "$part"; printf '%s' "$signature" > "$meta"; fi; offset="$(stat -c '%s' "$part" 2>/dev/null)"; offset="${{offset:-0}}"; if [ {source_is_directory} -eq 0 ] && [ "$offset" -gt {source_size} ]; then rm -f -- "$part"; offset=0; fi; available_kb="$(df -Pk "$parent" | awk 'NR==2 {{print $4}}')"; required_kb=$((({payload_size} * 2 + 1023) / 1024 + 65536 - offset / 1024)); [ "$required_kb" -lt 65536 ] && required_kb=65536; if [ "${{available_kb:-0}}" -lt "$required_kb" ]; then printf 'RackTop: 目标磁盘空间不足，需要约 %s KB，可用 %s KB\n' "$required_kb" "${{available_kb:-0}}" >&2; exit 73; fi; printf '__RACKTOP_OFFSET__\t%s\n' "$offset""#, artifact_id = artifact_id, signature = shell_quote(&checkpoint_signature), source_size = source_check.size_bytes, payload_size = payload_size, source_is_directory = source_check.is_directory as u8);
+        let prepare_script = format!(r#"target={target_path}; {expand_target}; parent="${{target%/*}}"; [ "$parent" = "$target" ] && parent="$HOME"; [ "$target" != / ] && [ "$target" != "$HOME" ] || {{ printf 'GPUDeck: 不允许使用根目录或 Home 根目录\n' >&2; exit 64; }}; mkdir -p "$parent"; part="$parent/.gpudeck-sync-{artifact_id}.part"; meta="$parent/.gpudeck-sync-{artifact_id}.meta"; backup="$parent/.gpudeck-sync-{artifact_id}.backup"; [ -e "$target" ] || [ ! -e "$backup" ] || mv -- "$backup" "$target"; signature={signature}; stored="$(cat "$meta" 2>/dev/null)"; if [ "$stored" != "$signature" ]; then rm -f -- "$part"; printf '%s' "$signature" > "$meta"; fi; offset="$(stat -c '%s' "$part" 2>/dev/null)"; offset="${{offset:-0}}"; if [ {source_is_directory} -eq 0 ] && [ "$offset" -gt {source_size} ]; then rm -f -- "$part"; offset=0; fi; available_kb="$(df -Pk "$parent" | awk 'NR==2 {{print $4}}')"; required_kb=$((({payload_size} * 2 + 1023) / 1024 + 65536 - offset / 1024)); [ "$required_kb" -lt 65536 ] && required_kb=65536; if [ "${{available_kb:-0}}" -lt "$required_kb" ]; then printf 'GPUDeck: 目标磁盘空间不足，需要约 %s KB，可用 %s KB\n' "$required_kb" "${{available_kb:-0}}" >&2; exit 73; fi; printf '__GPUDECK_OFFSET__\t%s\n' "$offset""#, artifact_id = artifact_id, signature = shell_quote(&checkpoint_signature), source_size = source_check.size_bytes, payload_size = payload_size, source_is_directory = source_check.is_directory as u8);
         let prepared = remote_output(&target_server, target_password.as_deref(), prepare_script, 20).await?;
-        let resume_offset = prepared.lines().find_map(|line| line.strip_prefix("__RACKTOP_OFFSET__\t")).and_then(|value| value.parse::<u64>().ok()).unwrap_or(0);
+        let resume_offset = prepared.lines().find_map(|line| line.strip_prefix("__GPUDECK_OFFSET__\t")).and_then(|value| value.parse::<u64>().ok()).unwrap_or(0);
         set_sync_resume_offset(&target_key, resume_offset);
         update_sync_progress(&target_key, resume_offset, "transferring");
         let source_input = delta_plan.as_ref().map(|(delta, _)| nul_path_list(&delta.archive_paths));
@@ -573,9 +573,9 @@ pub async fn sync(database: &Database, project: &Project, target_server_id: &str
                 let mut transferred = resume_offset;
                 let mut buffer = vec![0_u8; 128 * 1024];
                 loop {
-                    if cancel_signal.load(Ordering::Acquire) { return Err("__RACKTOP_PAUSED__".into()); }
+                    if cancel_signal.load(Ordering::Acquire) { return Err("__GPUDECK_PAUSED__".into()); }
                     let read = loop {
-                        if cancel_signal.load(Ordering::Acquire) { return Err("__RACKTOP_PAUSED__".into()); }
+                        if cancel_signal.load(Ordering::Acquire) { return Err("__GPUDECK_PAUSED__".into()); }
                         match timeout(Duration::from_millis(200), source_stdout.read(&mut buffer)).await {
                             Ok(result) => break result.map_err(|error| format!("同步数据流中断：{error}"))?,
                             Err(_) => continue,
@@ -584,7 +584,7 @@ pub async fn sync(database: &Database, project: &Project, target_server_id: &str
                     if read == 0 { break; }
                     let mut written = 0;
                     while written < read {
-                        if cancel_signal.load(Ordering::Acquire) { return Err("__RACKTOP_PAUSED__".into()); }
+                        if cancel_signal.load(Ordering::Acquire) { return Err("__GPUDECK_PAUSED__".into()); }
                         match timeout(Duration::from_millis(200), target_stdin.write(&buffer[written..read])).await {
                             Ok(Ok(0)) => return Err("目标服务器提前关闭了数据流".into()),
                             Ok(Ok(count)) => written += count,
@@ -631,11 +631,11 @@ pub async fn sync(database: &Database, project: &Project, target_server_id: &str
             Ok(ProjectSyncResult { project_id: project.id.clone(), target_server_id: target_server_id.into(), transferred_bytes: transferred, message: format!("已同步到 {}", target_server.name) })
         }
         Err(error) => {
-            if error == "__RACKTOP_PAUSED__" {
+            if error == "__GPUDECK_PAUSED__" {
                 let _ = database.mark_project_sync_paused(&project.id, target_server_id);
                 Err("同步已暂停".into())
-            } else if error.starts_with("__RACKTOP_CONFLICT__:") || error.contains("目标目录在同步期间发生修改") {
-                let message = error.strip_prefix("__RACKTOP_CONFLICT__:").unwrap_or(&error);
+            } else if error.starts_with("__GPUDECK_CONFLICT__:") || error.contains("目标目录在同步期间发生修改") {
+                let message = error.strip_prefix("__GPUDECK_CONFLICT__:").unwrap_or(&error);
                 let _ = database.mark_project_sync_conflict(&project.id, target_server_id, message);
                 Err(message.into())
             } else {
@@ -688,7 +688,7 @@ mod tests {
         let output = Command::new("sh").arg("-c").arg(suggestion_script(&query)).env("HOME", home.path()).output().unwrap();
         assert!(output.status.success());
         let suggestions = String::from_utf8(output.stdout).unwrap();
-        assert!(suggestions.contains(&format!("__RACKTOP_SUGGEST__\t{}/projects", home.path().display())));
+        assert!(suggestions.contains(&format!("__GPUDECK_SUGGEST__\t{}/projects", home.path().display())));
         assert!(!suggestions.contains(".cache"));
         assert!(!suggestions.contains("~/"));
     }
@@ -774,7 +774,7 @@ mod tests {
     #[test]
     fn resume_checkpoint_requires_matching_source_and_target_signatures() {
         let signature = sync_checkpoint_signature("10:1:100:1", "1:1:10:1:100");
-        let output = format!("__RACKTOP_CHECKPOINT__\t{signature}\t4096\n");
+        let output = format!("__GPUDECK_CHECKPOINT__\t{signature}\t4096\n");
         assert_eq!(resume_checkpoint_offset(&output, &signature), Some(4096));
         assert_eq!(resume_checkpoint_offset(&output, &sync_checkpoint_signature("11:1:101:1", "1:1:10:1:100")), None);
         assert_eq!(resume_checkpoint_offset(&output, &sync_checkpoint_signature("10:1:100:1", "1:1:12:1:101")), None);
@@ -830,11 +830,11 @@ mod tests {
     #[tokio::test]
     #[ignore = "requires two explicitly supplied SSH test servers"]
     async fn real_ssh_sync_rejects_conflicts_and_publishes_an_exact_copy() {
-        let source_address = std::env::var("RACKTOP_SYNC_TEST_SOURCE").expect("RACKTOP_SYNC_TEST_SOURCE=user@host is required");
-        let target_address = std::env::var("RACKTOP_SYNC_TEST_TARGET").expect("RACKTOP_SYNC_TEST_TARGET=user@host is required");
+        let source_address = std::env::var("GPUDECK_SYNC_TEST_SOURCE").expect("GPUDECK_SYNC_TEST_SOURCE=user@host is required");
+        let target_address = std::env::var("GPUDECK_SYNC_TEST_TARGET").expect("GPUDECK_SYNC_TEST_TARGET=user@host is required");
         let suffix = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
-        let source_path = format!("/tmp/racktop-sync-source-{suffix}");
-        let target_path = format!("/tmp/racktop-sync-target-{suffix}");
+        let source_path = format!("/tmp/gpudeck-sync-source-{suffix}");
+        let target_path = format!("/tmp/gpudeck-sync-target-{suffix}");
         let database_dir = tempfile::tempdir().unwrap();
         let database = Database::open(&database_dir.path().join("integration.sqlite")).unwrap();
         let source = database.save_server(integration_server_draft("Integration source", &source_address)).unwrap();
@@ -871,11 +871,11 @@ mod tests {
     #[tokio::test]
     #[ignore = "requires two explicitly supplied SSH test servers"]
     async fn real_ssh_sync_pauses_and_resumes_from_the_partial_file() {
-        let source_address = std::env::var("RACKTOP_SYNC_TEST_SOURCE").expect("RACKTOP_SYNC_TEST_SOURCE=user@host is required");
-        let target_address = std::env::var("RACKTOP_SYNC_TEST_TARGET").expect("RACKTOP_SYNC_TEST_TARGET=user@host is required");
+        let source_address = std::env::var("GPUDECK_SYNC_TEST_SOURCE").expect("GPUDECK_SYNC_TEST_SOURCE=user@host is required");
+        let target_address = std::env::var("GPUDECK_SYNC_TEST_TARGET").expect("GPUDECK_SYNC_TEST_TARGET=user@host is required");
         let suffix = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
-        let source_path = format!("/tmp/racktop-sync-resume-source-{suffix}.bin");
-        let target_path = format!("/tmp/racktop-sync-resume-target-{suffix}.bin");
+        let source_path = format!("/tmp/gpudeck-sync-resume-source-{suffix}.bin");
+        let target_path = format!("/tmp/gpudeck-sync-resume-target-{suffix}.bin");
         let database_dir = tempfile::tempdir().unwrap();
         let database = std::sync::Arc::new(Database::open(&database_dir.path().join("resume.sqlite")).unwrap());
         let source = database.save_server(integration_server_draft("Resume source", &source_address)).unwrap();
@@ -910,7 +910,7 @@ mod tests {
             if paused_project.targets[0].status != "paused" { return Err(format!("预期 paused，实际为 {}", paused_project.targets[0].status)); }
             let artifact_id = super::sync_artifact_id(&paused_project, &target, &target_path);
             cleanup_artifact_id = Some(artifact_id.clone());
-            let part_path = format!("/tmp/.racktop-sync-{artifact_id}.part");
+            let part_path = format!("/tmp/.gpudeck-sync-{artifact_id}.part");
             let stored: u64 = super::remote_output(&target, None, format!("stat -c '%s' {}", shell_quote(&part_path)), 15).await?.trim().parse().map_err(|error| format!("无法读取断点文件：{error}"))?;
             if stored == 0 || stored > partial_bytes { return Err(format!("断点大小异常：stored={stored}, progress={partial_bytes}")); }
 
@@ -922,7 +922,7 @@ mod tests {
         }.await;
 
         let _ = super::remote_output(&source, None, format!("rm -f -- {}", shell_quote(&source_path)), 15).await;
-        let artifact_cleanup = cleanup_artifact_id.map(|artifact_id| format!(" /tmp/.racktop-sync-{artifact_id}.part /tmp/.racktop-sync-{artifact_id}.meta /tmp/.racktop-sync-{artifact_id}.stage /tmp/.racktop-sync-{artifact_id}.backup")).unwrap_or_default();
+        let artifact_cleanup = cleanup_artifact_id.map(|artifact_id| format!(" /tmp/.gpudeck-sync-{artifact_id}.part /tmp/.gpudeck-sync-{artifact_id}.meta /tmp/.gpudeck-sync-{artifact_id}.stage /tmp/.gpudeck-sync-{artifact_id}.backup")).unwrap_or_default();
         let _ = super::remote_output(&target, None, format!("rm -rf -- {}{artifact_cleanup}", shell_quote(&target_path)), 15).await;
         outcome.unwrap();
     }

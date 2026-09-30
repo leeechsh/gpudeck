@@ -1,4 +1,4 @@
-# RackTop: 一屏掌握所有服务器的算力状态应用设计方案
+# GPUDeck: 一屏掌握所有服务器的算力状态应用设计方案
 
 ## 1. 项目概述
 
@@ -25,7 +25,7 @@
 
 名称：
 
-# RackTop
+# GPUDeck
 
 英文标语：
 
@@ -39,7 +39,7 @@
 
 ## 3. 核心目标
 
-RackTop 的目标是让用户在 macOS 或 Windows 上：
+GPUDeck 的目标是让用户在 macOS 或 Windows 上：
 
 1. 导入或添加多台 Linux GPU 服务器；
 2. 通过 SSH 一键连接所有服务器；
@@ -139,7 +139,7 @@ Tauri 允许开发者使用 Web 技术编写界面，同时使用 Rust 实现本
 
 ## 4.4 UI、动画与交互设计技能
 
-RackTop 的网页界面以及 Tauri WebView 中的桌面界面，在进行页面设计、组件实现、动画设计和交互体验优化时，统一优先使用 [`emilkowalski/skills`](https://github.com/emilkowalski/skills) 作为设计工程技能集。
+GPUDeck 的网页界面以及 Tauri WebView 中的桌面界面，在进行页面设计、组件实现、动画设计和交互体验优化时，统一优先使用 [`emilkowalski/skills`](https://github.com/emilkowalski/skills) 作为设计工程技能集。
 
 该技能集用于辅助以下工作：
 
@@ -164,7 +164,7 @@ npx skills@latest add emilkowalski/skills
 
 安装失败时，应明确报告原因和缺失条件，不得假装技能已经生效。只有在无法完成安装时，才可以暂时使用项目现有设计规范继续开发，并在交付说明中记录该降级情况。
 
-该技能属于开发阶段的 Agent Skills，不应被打包为 RackTop 用户端运行依赖。最终用户安装 RackTop 时不需要安装 Node.js、`skills` CLI 或该技能仓库。
+该技能属于开发阶段的 Agent Skills，不应被打包为 GPUDeck 用户端运行依赖。最终用户安装 GPUDeck 时不需要安装 Node.js、`skills` CLI 或该技能仓库。
 
 ### 按任务调用对应技能
 
@@ -193,9 +193,9 @@ npx skills@latest add emilkowalski/skills
 7. 在 macOS 版本上使用 `apple-design` 做一次平台体验检查；
 8. 检查减少动态效果、键盘操作、焦点状态和无障碍支持。
 
-### RackTop 动效原则
+### GPUDeck 动效原则
 
-RackTop 是高信息密度的实时监控工具，动效应遵循以下原则：
+GPUDeck 是高信息密度的实时监控工具，动效应遵循以下原则：
 
 - 动画服务于状态变化和空间关系，不作为装饰；
 - 实时图表更新应平滑，但不得造成数据延迟或视觉误导；
@@ -212,7 +212,7 @@ RackTop 是高信息密度的实时监控工具，动效应遵循以下原则：
 
 ```text
 ┌─────────────────────────────────────────────┐
-│          RackTop Desktop Application        │
+│          GPUDeck Desktop Application        │
 │              macOS / Windows                │
 │                                             │
 │  React + TypeScript                         │
@@ -713,13 +713,13 @@ GPU 利用率 < 10%
 
 ## 9.4 系统托盘
 
-RackTop 可以常驻系统托盘。
+GPUDeck 可以常驻系统托盘。
 
 托盘信息可以显示：
 
 ```text
 
-RackTop
+GPUDeck
 3 / 4 Servers Online
 5 GPUs Idle
 GPU Avg: 72%
@@ -777,7 +777,7 @@ GPU Avg: 72%
 可展示的基础命令示例：
 
 ```bash
-ssh-keygen -t ed25519 -C "RackTop"
+ssh-keygen -t ed25519 -C "GPUDeck"
 ssh-copy-id user@server
 ssh user@server
 ```
@@ -1047,7 +1047,7 @@ GPU 利用率超过 95%，并持续 30 分钟
 └──────────────┘  │    └────────┬─────────┘
                   │             │
 ┌──────────────┐  │             ▼
-│ GPU Server C │──┘        RackTop App
+│ GPU Server C │──┘        GPUDeck App
 │ Local Agent  │
 └──────────────┘
 ```
@@ -1068,7 +1068,7 @@ Agent 架构的优点：
 
 `nvitop` 非常适合查看单台服务器的实时 GPU 状态和进程。
 
-RackTop 不需要直接依赖 `nvitop` 才能工作。第一版可以直接解析：
+GPUDeck 不需要直接依赖 `nvitop` 才能工作。第一版可以直接解析：
 
 - `nvidia-smi`；
 - `/proc/stat`；
@@ -1099,8 +1099,8 @@ RackTop 不需要直接依赖 `nvitop` 才能工作。第一版可以直接解�
 可生成：
 
 ```text
-RackTop.app
-RackTop.dmg
+GPUDeck.app
+GPUDeck.dmg
 ```
 
 发布时建议完成：
@@ -1117,8 +1117,8 @@ RackTop.dmg
 可生成：
 
 ```text
-RackTop_x64.msi
-RackTop-setup.exe
+GPUDeck_x64.msi
+GPUDeck-setup.exe
 ```
 
 发布时建议完成：
@@ -1139,14 +1139,14 @@ RackTop-setup.exe
 - `nvitop`；
 - 开发环境。
 
-用户安装 RackTop 后即可使用。
+用户安装 GPUDeck 后即可使用。
 
 ---
 
 ## 18. 推荐项目目录
 
 ```text
-RackTop/
+GPUDeck/
 ├── .agents/
 │   └── skills/                 # 由 skills CLI 管理，实际目录以安装结果为准
 ├── src/
@@ -1257,7 +1257,7 @@ storage/
 对于该项目，推荐采用以下组合：
 
 ```text
-应用名称：RackTop
+应用名称：GPUDeck
 桌面框架：Tauri 2
 前端：React + TypeScript
 界面：HTML + CSS
@@ -1274,9 +1274,9 @@ UI / 动画设计技能：emilkowalski/skills
 最终产品可以打包为：
 
 ```text
-RackTop.dmg
-RackTop_x64.msi
-RackTop-setup.exe
+GPUDeck.dmg
+GPUDeck_x64.msi
+GPUDeck-setup.exe
 ```
 
 用户安装后，可以导入 SSH Config 或手动添加服务器，然后点击“连接全部”，在一个界面中查看所有服务器的 GPU、CPU、内存、温度、功耗、进程和趋势。
@@ -1285,4 +1285,4 @@ RackTop-setup.exe
 
 ## 22. 一句话产品定义
 
-> RackTop 是一款面向开发者、研究人员和算力团队的跨平台桌面应用，通过 SSH 一键聚合并展示多台服务器的 GPU、CPU、内存、进程和历史趋势。
+> GPUDeck 是一款面向开发者、研究人员和算力团队的跨平台桌面应用，通过 SSH 一键聚合并展示多台服务器的 GPU、CPU、内存、进程和历史趋势。

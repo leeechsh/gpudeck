@@ -1,24 +1,24 @@
 ---
-- name: Install the read-only RackTop Agent
+- name: Install the read-only GPUDeck Agent
   hosts: gpu_servers
   become: true
   vars:
-    racktop_agent_binary: ../../target/release/racktop-agent
+    gpudeck_agent_binary: ../../target/release/gpudeck-agent
   tasks:
     - name: Create agent system group
-      ansible.builtin.group: { name: racktop-agent, system: true }
+      ansible.builtin.group: { name: gpudeck-agent, system: true }
     - name: Create agent system user
-      ansible.builtin.user: { name: racktop-agent, group: racktop-agent, system: true, shell: /usr/sbin/nologin, create_home: false }
+      ansible.builtin.user: { name: gpudeck-agent, group: gpudeck-agent, system: true, shell: /usr/sbin/nologin, create_home: false }
     - name: Install agent binary
-      ansible.builtin.copy: { src: "{{ racktop_agent_binary }}", dest: /usr/local/bin/racktop-agent, owner: root, group: root, mode: "0755" }
+      ansible.builtin.copy: { src: "{{ gpudeck_agent_binary }}", dest: /usr/local/bin/gpudeck-agent, owner: root, group: root, mode: "0755" }
     - name: Install node-specific environment
-      ansible.builtin.template: { src: racktop-agent.env.j2, dest: /etc/racktop-agent.env, owner: root, group: racktop-agent, mode: "0640" }
+      ansible.builtin.template: { src: gpudeck-agent.env.j2, dest: /etc/gpudeck-agent.env, owner: root, group: gpudeck-agent, mode: "0640" }
       no_log: true
     - name: Install service
-      ansible.builtin.copy: { src: ../racktop-agent.service, dest: /etc/systemd/system/racktop-agent.service, owner: root, group: root, mode: "0644" }
-      notify: Restart RackTop Agent
+      ansible.builtin.copy: { src: ../gpudeck-agent.service, dest: /etc/systemd/system/gpudeck-agent.service, owner: root, group: root, mode: "0644" }
+      notify: Restart GPUDeck Agent
     - name: Enable agent
-      ansible.builtin.systemd_service: { name: racktop-agent, enabled: true, state: started, daemon_reload: true }
+      ansible.builtin.systemd_service: { name: gpudeck-agent, enabled: true, state: started, daemon_reload: true }
   handlers:
-    - name: Restart RackTop Agent
-      ansible.builtin.systemd_service: { name: racktop-agent, state: restarted, daemon_reload: true }
+    - name: Restart GPUDeck Agent
+      ansible.builtin.systemd_service: { name: gpudeck-agent, state: restarted, daemon_reload: true }

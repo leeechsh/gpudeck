@@ -5,8 +5,8 @@ export interface ReleaseInfo {
 }
 
 export const UPDATE_CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000
-export const UPDATE_CHECK_STORAGE_KEY = 'racktop.updateCheck.v1'
-export const IGNORED_UPDATE_VERSION_KEY = 'racktop.ignoredUpdateVersion.v1'
+export const UPDATE_CHECK_STORAGE_KEY = 'gpudeck.updateCheck.v1'
+export const IGNORED_UPDATE_VERSION_KEY = 'gpudeck.ignoredUpdateVersion.v1'
 
 export interface UpdateCheckCache {
   lastCheckedAt?: number

@@ -125,18 +125,18 @@ fn configured_ssh_command(server: &Server, password: Option<&str>) -> Result<Com
     command.args(["-tt", "-o", "ConnectTimeout=8", "-o", "ServerAliveInterval=5", "-o", "ServerAliveCountMax=2", "-o", "StrictHostKeyChecking=yes"]);
     if server.auth_method == "password" {
         let password = password.ok_or("没有可用密码；请重新编辑服务器并输入密码")?;
-        let executable = std::env::current_exe().map_err(|error| format!("无法定位 RackTop SSH_ASKPASS：{error}"))?;
+        let executable = std::env::current_exe().map_err(|error| format!("无法定位 GPUDeck SSH_ASKPASS：{error}"))?;
         command.args(["-o", "BatchMode=no", "-o", "PreferredAuthentications=password,keyboard-interactive", "-o", "PubkeyAuthentication=no", "-o", "NumberOfPasswordPrompts=1"]);
         command.env("SSH_ASKPASS", executable);
         command.env("SSH_ASKPASS_REQUIRE", "force");
-        command.env("RACKTOP_ASKPASS_PASSWORD", password);
+        command.env("GPUDECK_ASKPASS_PASSWORD", password);
         #[cfg(unix)]
-        command.env("DISPLAY", "racktop:0");
+        command.env("DISPLAY", "gpudeck:0");
     } else {
         command.args(["-o", "BatchMode=yes"]);
     }
     #[cfg(unix)]
-    command.args(["-o", "ControlMaster=auto", "-o", "ControlPersist=600", "-o", "ControlPath=/tmp/racktop-%C"]);
+    command.args(["-o", "ControlMaster=auto", "-o", "ControlPersist=600", "-o", "ControlPath=/tmp/gpudeck-%C"]);
     if let Some(identity) = explicit_identity_file(server) {
         command.args(["-o", "IdentitiesOnly=yes"]);
         command.arg("-i");

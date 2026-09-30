@@ -1,10 +1,10 @@
 [workspace]
-members = ["crates/racktop-domain", "crates/racktop-hub", "crates/racktop-agent"]
+members = ["crates/gpudeck-domain", "crates/gpudeck-hub", "crates/gpudeck-agent"]
 exclude = ["src-tauri"]
 resolver = "2"
 
 [workspace.package]
-version = "1.29.0"
+version = "2.0.0"
 edition = "2024"
 license = "GPL-3.0-only"
 

@@ -1,7 +1,7 @@
 use crate::models::Server;
 use std::path::{Path, PathBuf};
 
-const MANAGED_KEY_FILENAME: &str = "racktop_ed25519";
+const MANAGED_KEY_FILENAME: &str = "gpudeck_ed25519";
 
 pub fn expand_identity_path(value: &str) -> PathBuf {
     if value == "~" {
@@ -30,10 +30,10 @@ pub fn managed_public_key(server: &Server) -> Result<Option<String>, String> {
     public_path.push(".pub");
     let public_path = PathBuf::from(public_path);
     let line = std::fs::read_to_string(&public_path)
-        .map_err(|error| format!("无法读取 RackTop 专用公钥 {}：{error}", public_path.display()))?;
+        .map_err(|error| format!("无法读取 GPUDeck 专用公钥 {}：{error}", public_path.display()))?;
     let fields: Vec<&str> = line.split_whitespace().collect();
     if fields.len() < 2 || !is_public_key_algorithm(fields[0]) || fields[1].is_empty() {
-        return Err(format!("RackTop 专用公钥 {} 格式无效", public_path.display()));
+        return Err(format!("GPUDeck 专用公钥 {} 格式无效", public_path.display()));
     }
     Ok(Some(format!("{} {}", fields[0], fields[1])))
 }
@@ -47,10 +47,10 @@ mod tests {
     use super::*;
 
     #[test]
-    fn recognizes_only_the_racktop_key_inside_ssh_directory() {
-        assert!(is_managed_identity_path("~/.ssh/racktop_ed25519"));
-        assert!(is_managed_identity_path("C:\\Users\\alice\\.ssh\\racktop_ed25519"));
+    fn recognizes_only_the_gpudeck_key_inside_ssh_directory() {
+        assert!(is_managed_identity_path("~/.ssh/gpudeck_ed25519"));
+        assert!(is_managed_identity_path("C:\\Users\\alice\\.ssh\\gpudeck_ed25519"));
         assert!(!is_managed_identity_path("~/.ssh/id_ed25519"));
-        assert!(!is_managed_identity_path("~/racktop_ed25519"));
+        assert!(!is_managed_identity_path("~/gpudeck_ed25519"));
     }
 }

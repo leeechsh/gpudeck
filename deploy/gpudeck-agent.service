@@ -1,14 +1,14 @@
 [Unit]
-Description=RackTop read-only GPU telemetry agent
+Description=GPUDeck read-only GPU telemetry agent
 After=network-online.target
 Wants=network-online.target
 
 [Service]
 Type=simple
-User=racktop-agent
-Group=racktop-agent
-EnvironmentFile=/etc/racktop-agent.env
-ExecStart=/usr/local/bin/racktop-agent
+User=gpudeck-agent
+Group=gpudeck-agent
+EnvironmentFile=/etc/gpudeck-agent.env
+ExecStart=/usr/local/bin/gpudeck-agent
 Restart=always
 RestartSec=5
 NoNewPrivileges=true

@@ -1,4 +1,4 @@
-# RackTop MVP 验收清单
+# GPUDeck MVP 验收清单
 
 更新时间：2026-08-03
 
@@ -36,8 +36,8 @@
 - `tongzh@10.201.127.132`：Ubuntu 24.04.2，3 张 A100，GPU 进程归属与空闲卡识别通过。
 - 本地浏览器：GPU 总览、4×2 响应式摘要、瀑布流、排序、筛选与显存颜色语义通过。
 - 原生 macOS `.app`：启动、SQLite 写入、两台服务器并发 SSH、总览/详情/空闲筛选完整链路通过；数字输入可清空后直接输入 `20`；两台服务器均持续生成历史样本。
-- macOS DMG：含 `RackTop.app` 和 Applications 入口；挂载后 `codesign --verify --deep --strict` 通过。
+- macOS DMG：含 `GPUDeck.app` 和 Applications 入口；挂载后 `codesign --verify --deep --strict` 通过。
 
 ## 尚缺的完成证据
 
-- 必须在真实 `windows-latest`/Windows x64 环境运行 `.github/workflows/build.yml`。工作流会验证 MSI 可解包、NSIS 可安装、已安装的 RackTop 能持续启动并可卸载。macOS 上的 Windows target 检查会在 `libsqlite3-sys` 处需要 MSVC SDK，不能替代 Windows runner。
+- 必须在真实 `windows-latest`/Windows x64 环境运行 `.github/workflows/build.yml`。工作流会验证 MSI 可解包、NSIS 可安装、已安装的 GPUDeck 能持续启动并可卸载。macOS 上的 Windows target 检查会在 `libsqlite3-sys` 处需要 MSVC SDK，不能替代 Windows runner。

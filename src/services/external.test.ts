@@ -10,9 +10,9 @@ describe('openExternalUrl', () => {
     const open = vi.fn(() => ({} as Window))
     vi.stubGlobal('window', { open })
 
-    await openExternalUrl('https://github.com/Tongzh-SEU/RackTop')
+    await openExternalUrl('https://github.com/leeechsh/gpudeck')
 
-    expect(open).toHaveBeenCalledWith('https://github.com/Tongzh-SEU/RackTop', '_blank', 'noopener,noreferrer')
+    expect(open).toHaveBeenCalledWith('https://github.com/leeechsh/gpudeck', '_blank', 'noopener,noreferrer')
   })
 
   it('does not treat a null noopener return value as an open failure', async () => {

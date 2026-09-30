@@ -2,7 +2,7 @@ import type { Snapshot } from '../types/models'
 
 type NvidiaState = Snapshot['nvidiaSmi']
 
-export const IGNORED_NVIDIA_WARNINGS_STORAGE_KEY = 'racktop.ignoredNvidiaWarnings.v1'
+export const IGNORED_NVIDIA_WARNINGS_STORAGE_KEY = 'gpudeck.ignoredNvidiaWarnings.v1'
 
 export function parseIgnoredNvidiaWarningIds(serialized: string | null): Set<string> {
   if (!serialized) return new Set()

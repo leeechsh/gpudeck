@@ -43,7 +43,7 @@ describe('App startup update check', () => {
     const setTimeout = vi.spyOn(window, 'setTimeout')
     const getLatestRelease = vi.spyOn(api, 'getLatestRelease').mockResolvedValue({
       version: '1.25.4',
-      url: 'https://github.com/Tongzh-SEU/RackTop/releases/tag/v1.25.4',
+      url: 'https://github.com/leeechsh/gpudeck/releases/tag/v1.25.4',
     })
     const container = document.createElement('div')
     document.body.append(container)
@@ -71,7 +71,7 @@ describe('App startup update check', () => {
   it('opens the current release notes from the About update row', async () => {
     vi.spyOn(api, 'getLatestRelease').mockResolvedValue({
       version: '1.25.4',
-      url: 'https://github.com/Tongzh-SEU/RackTop/releases/tag/v1.25.4',
+      url: 'https://github.com/leeechsh/gpudeck/releases/tag/v1.25.4',
     })
     const open = vi.spyOn(window, 'open').mockReturnValue(null)
     const container = document.createElement('div')
@@ -83,14 +83,14 @@ describe('App startup update check', () => {
       await Promise.resolve()
     })
     await act(async () => {
-      container.querySelector<HTMLButtonElement>('button[aria-label="关于 RackTop"]')?.click()
+      container.querySelector<HTMLButtonElement>('button[aria-label="关于 GPUDeck"]')?.click()
     })
     const releaseNotes = [...container.querySelectorAll<HTMLButtonElement>('button')]
       .find((button) => button.textContent === '版本说明')
     expect(releaseNotes).toBeDefined()
     await act(async () => releaseNotes?.click())
     expect(open).toHaveBeenCalledWith(
-      'https://github.com/Tongzh-SEU/RackTop/releases/tag/v1.29.0',
+      'https://github.com/leeechsh/gpudeck/releases/tag/v2.0.0',
       '_blank',
       'noopener,noreferrer',
     )

@@ -5,7 +5,7 @@ import { currentUserAcceleratorCount } from './processRelations'
 export type FleetSort = 'name' | 'status' | 'gpuCount' | 'utilization' | 'idleCount' | 'myProcesses'
 export type FleetSortMode = 'auto' | 'manual'
 
-export const FLEET_SORT_MODE_STORAGE_KEY = 'racktop.fleetSortMode.v1'
+export const FLEET_SORT_MODE_STORAGE_KEY = 'gpudeck.fleetSortMode.v1'
 
 export function initialFleetSortMode(sort: FleetSort, descending: boolean, storedMode: string | null): FleetSortMode {
   if (storedMode === 'manual') return 'manual'

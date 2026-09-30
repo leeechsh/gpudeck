@@ -282,7 +282,7 @@ async fn delete_server(
     let managed_public_key = if revoke_ssh_access {
         Some(
             ssh_keys::managed_public_key(&server)?
-                .ok_or("这台服务器未使用 RackTop 专用密钥，无法自动撤销免密登录")?,
+                .ok_or("这台服务器未使用 GPUDeck 专用密钥，无法自动撤销免密登录")?,
         )
     } else {
         None
@@ -292,7 +292,7 @@ async fn delete_server(
         Ok(()) => {
             database.delete_server(&server_id)?;
             let suffix = if revoke_ssh_access {
-                "，并已撤销 RackTop 免密登录"
+                "，并已撤销 GPUDeck 免密登录"
             } else {
                 ""
             };
@@ -300,7 +300,7 @@ async fn delete_server(
                 remote_cleaned: true,
                 cleanup_pending: false,
                 message: format!(
-                    "已删除“{}”及其本地与远端 RackTop 数据{}",
+                    "已删除“{}”及其本地与远端 GPUDeck 数据{}",
                     server.name, suffix
                 ),
             })
@@ -396,7 +396,7 @@ fn open_setup_terminal(script: String) -> Result<(), String> {
         use std::os::unix::fs::OpenOptionsExt;
 
         let script_path = std::env::temp_dir().join(format!(
-            "racktop-ssh-setup-{}-{}.sh",
+            "gpudeck-ssh-setup-{}-{}.sh",
             std::process::id(),
             SystemTime::now()
                 .duration_since(UNIX_EPOCH)
@@ -416,7 +416,7 @@ fn open_setup_terminal(script: String) -> Result<(), String> {
 
         let path = shell_quote(script_path.to_string_lossy().as_ref());
         let command = format!(
-            "clear; printf '%s\\n\\n' 'RackTop SSH 密钥快速配置'; cat {path}; printf '%s\\n\\n' '正在执行…'; /bin/sh {path}; status=$?; rm -f {path}; printf '\\n%s\\n' 'RackTop SSH 配置已结束。'; exit $status"
+            "clear; printf '%s\\n\\n' 'GPUDeck SSH 密钥快速配置'; cat {path}; printf '%s\\n\\n' '正在执行…'; /bin/sh {path}; status=$?; rm -f {path}; printf '\\n%s\\n' 'GPUDeck SSH 配置已结束。'; exit $status"
         );
         let apple_script_command = command.replace('\\', "\\\\").replace('"', "\\\"");
         Command::new("osascript").args(["-e", &format!("tell application \"Terminal\" to activate\ntell application \"Terminal\" to do script \"{apple_script_command}\"")]).spawn().map_err(|error| format!("无法打开 macOS Terminal：{error}"))?;
@@ -473,7 +473,7 @@ async fn verify_ssh_setup(draft: ServerDraft) -> Result<(), String> {
         port: draft.port,
         username: draft.username,
         ssh_alias: None,
-        identity_file: Some("~/.ssh/racktop_ed25519".into()),
+        identity_file: Some("~/.ssh/gpudeck_ed25519".into()),
         proxy_jump: draft.proxy_jump,
         tags: Vec::new(),
         sampling_interval_seconds: 2,
@@ -489,13 +489,13 @@ async fn verify_ssh_setup(draft: ServerDraft) -> Result<(), String> {
     let (mut command, target) = collector::configured_ssh_command(&server, None)?;
     command
         .arg(target)
-        .arg("printf '__RACKTOP_SSH_READY__\\n'")
+        .arg("printf '__GPUDECK_SSH_READY__\\n'")
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped());
     let output = tokio::time::timeout(std::time::Duration::from_secs(12), command.output())
         .await
-        .map_err(|_| "等待 RackTop 专用密钥验证超时".to_string())?
+        .map_err(|_| "等待 GPUDeck 专用密钥验证超时".to_string())?
         .map_err(|error| format!("无法启动系统 ssh：{error}"))?;
     if !output.status.success() {
         return Err(collector::classify_ssh_error(
@@ -504,7 +504,7 @@ async fn verify_ssh_setup(draft: ServerDraft) -> Result<(), String> {
     }
     if !String::from_utf8_lossy(&output.stdout)
         .lines()
-        .any(|line| line.trim() == "__RACKTOP_SSH_READY__")
+        .any(|line| line.trim() == "__GPUDECK_SSH_READY__")
     {
         return Err("专用密钥登录后未返回验证标记".into());
     }
@@ -1158,7 +1158,7 @@ fn build_tray_menu(
     reservation_pending: usize,
     process_warnings: usize,
 ) -> Result<Menu<tauri::Wry>, Box<dyn std::error::Error>> {
-    let open = MenuItemBuilder::with_id("open", "打开 RackTop").build(app)?;
+    let open = MenuItemBuilder::with_id("open", "打开 GPUDeck").build(app)?;
     let reservations = MenuItemBuilder::with_id(
         "reservations",
         format!("预约待处理  {}", reservation_pending),
@@ -1181,14 +1181,14 @@ fn build_tray_menu(
 
 #[cfg(target_os = "macos")]
 fn build_application_menu(app: &AppHandle) -> Result<Menu<tauri::Wry>, Box<dyn std::error::Error>> {
-    let about = MenuItemBuilder::with_id("menu-about", "关于 RackTop").build(app)?;
+    let about = MenuItemBuilder::with_id("menu-about", "关于 GPUDeck").build(app)?;
     let settings = MenuItemBuilder::with_id("menu-settings", "设置…")
         .accelerator("CmdOrCtrl+,")
         .build(app)?;
-    let quit = MenuItemBuilder::with_id("menu-quit", "退出 RackTop")
+    let quit = MenuItemBuilder::with_id("menu-quit", "退出 GPUDeck")
         .accelerator("CmdOrCtrl+Q")
         .build(app)?;
-    let racktop = SubmenuBuilder::new(app, "RackTop")
+    let gpudeck = SubmenuBuilder::new(app, "GPUDeck")
         .items(&[&about, &settings])
         .separator()
         .item(&quit)
@@ -1251,7 +1251,7 @@ fn build_application_menu(app: &AppHandle) -> Result<Menu<tauri::Wry>, Box<dyn s
         .build()?;
 
     Ok(MenuBuilder::new(app)
-        .items(&[&racktop, &edit, &servers, &view, &window, &help])
+        .items(&[&gpudeck, &edit, &servers, &view, &window, &help])
         .build()?)
 }
 
@@ -1270,8 +1270,8 @@ fn update_tray_summary(
     let menu = build_tray_menu(&app, reservation_pending, process_warnings)
         .map_err(|error| error.to_string())?;
     let tray = app
-        .tray_by_id("racktop-tray")
-        .ok_or("找不到 RackTop 菜单栏图标")?;
+        .tray_by_id("gpudeck-tray")
+        .ok_or("找不到 GPUDeck 菜单栏图标")?;
     tray.set_menu(Some(menu))
         .map_err(|error| error.to_string())?;
     tray.set_icon_with_as_template(
@@ -1280,7 +1280,7 @@ fn update_tray_summary(
     )
     .map_err(|error| error.to_string())?;
     tray.set_tooltip(Some(&format!(
-        "RackTop · 预约待处理 {} · 我的进程异常 {}",
+        "GPUDeck · 预约待处理 {} · 我的进程异常 {}",
         reservation_pending, process_warnings
     )))
     .map_err(|error| error.to_string())?;
@@ -1317,7 +1317,7 @@ pub fn run() {
                 .path()
                 .app_data_dir()
                 .map_err(|error| Box::<dyn std::error::Error>::from(error))?;
-            let database = Database::open(&app_data.join("racktop.sqlite")).map_err(|error| {
+            let database = Database::open(&app_data.join("gpudeck.sqlite")).map_err(|error| {
                 Box::<dyn std::error::Error>::from(std::io::Error::other(error))
             })?;
             app.manage(database);
@@ -1350,7 +1350,7 @@ pub fn run() {
             // Run best-effort cleanup after the window is visible; a locked
             // database is harmless and will be retried on the next launch.
             let maintenance_handle = app.handle().clone();
-            let maintenance_path = app_data.join("racktop.sqlite");
+            let maintenance_path = app_data.join("gpudeck.sqlite");
             std::thread::spawn(move || {
                 if let Err(error) = Database::migrate_usage_in_background(&maintenance_path) {
                     eprintln!("Deferred usage migration skipped: {error}");
@@ -1367,10 +1367,10 @@ pub fn run() {
             app.set_menu(build_application_menu(&app.handle())?)?;
 
             let menu = build_tray_menu(&app.handle(), 0, 0)?;
-            TrayIconBuilder::with_id("racktop-tray")
+            TrayIconBuilder::with_id("gpudeck-tray")
                 .icon(tray_image("compact", 0, 0))
                 .icon_as_template(true)
-                .tooltip("RackTop · GPU 与 CPU 监控")
+                .tooltip("GPUDeck · GPU 与 CPU 监控")
                 .menu(&menu)
                 .on_menu_event(|app, event| match event.id().as_ref() {
                     "open" | "reservations" | "mine-processes" => {
@@ -1455,5 +1455,5 @@ pub fn run() {
             window_close
         ])
         .run(tauri::generate_context!())
-        .expect("RackTop 启动失败");
+        .expect("GPUDeck 启动失败");
 }

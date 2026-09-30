@@ -1,5 +1,5 @@
 [package]
-name = "racktop-agent"
+name = "gpudeck-agent"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -7,7 +7,7 @@ license.workspace = true
 [dependencies]
 anyhow.workspace = true
 chrono.workspace = true
-racktop-domain = { path = "../racktop-domain" }
+gpudeck-domain = { path = "../gpudeck-domain" }
 reqwest.workspace = true
 serde.workspace = true
 tokio.workspace = true

@@ -26,7 +26,7 @@ export function AppUpdateDialog({ state, onClose, onRetry, onManualDownload }: A
         <button className="icon-button" onClick={onClose} aria-label="关闭更新窗口"><X size={17} /></button>
       </div></> : <div className="app-update-body">
         <div className="app-update-status-copy">
-          <strong id="app-update-title">{checking ? '正在检查更新' : installing ? `正在安装 RackTop ${state.version}` : `正在下载 RackTop ${state.version}`}</strong>
+          <strong id="app-update-title">{checking ? '正在检查更新' : installing ? `正在安装 GPUDeck ${state.version}` : `正在下载 GPUDeck ${state.version}`}</strong>
           <span>{checking ? '请稍候...' : installing ? '下载完成' : progressLabel}</span>
         </div>
         <div className={`app-update-progress${percent === null || checking || installing ? ' is-indeterminate' : ''}`} role="progressbar" aria-label={checking ? '正在检查更新' : installing ? '正在安装更新' : '更新下载进度'} aria-valuemin={0} aria-valuemax={100} aria-valuenow={percent === null || checking || installing ? undefined : Math.round(percent)}>

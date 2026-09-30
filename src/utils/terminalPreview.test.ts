@@ -42,6 +42,6 @@ describe('terminal preview', () => {
     output = ''
     input('\x1b[200~第一段文字\r\n\r\n第二段文字\n第三段文字\x1b[201~')
     expect(output).toBe('第一段文字\r\n\r\n第二段文字\r\n第三段文字')
-    expect(output).not.toContain('preview@racktop')
+    expect(output).not.toContain('preview@gpudeck')
   })
 })

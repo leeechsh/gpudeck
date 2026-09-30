@@ -26,6 +26,14 @@ pub struct GpuProcessTelemetry {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct SystemUserTelemetry {
+    pub username: String,
+    pub uid: i64,
+    pub shell: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct AgentSnapshot {
     pub node_id: Uuid,
     pub sequence: i64,
@@ -36,6 +44,8 @@ pub struct AgentSnapshot {
     pub memory_total_bytes: Option<i64>,
     pub gpus: Vec<GpuTelemetry>,
     pub processes: Vec<GpuProcessTelemetry>,
+    #[serde(default)]
+    pub system_users: Vec<SystemUserTelemetry>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -79,6 +89,7 @@ mod tests {
             memory_total_bytes: None,
             gpus: vec![],
             processes: vec![],
+            system_users: vec![],
         };
         let json = serde_json::to_value(payload).unwrap();
         assert!(json.get("nodeId").is_some());

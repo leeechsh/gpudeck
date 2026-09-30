@@ -1,11 +1,11 @@
 /** Local preview only. Never executes commands or connects to a host. */
 export function createTerminalPreview(write: (data: string) => void, size: () => { rows: number; cols: number }) {
   let line = ''
-  const prompt = () => write('\x1b[32mpreview@racktop\x1b[0m:~$ ')
+  const prompt = () => write('\x1b[32mpreview@gpudeck\x1b[0m:~$ ')
   const fill = () => {
     for (let i = 1; i <= size().rows * 3; i++) write(`模拟输出 ${String(i).padStart(4, '0')} · 终端应一直显示到框底部\r\n`)
   }
-  write('RackTop 本地模拟终端（不连接 SSH、不执行真实命令）\r\n命令：help、fill、size、clear、echo 文本；支持回车和退格。\r\n')
+  write('GPUDeck 本地模拟终端（不连接 SSH、不执行真实命令）\r\n命令：help、fill、size、clear、echo 文本；支持回车和退格。\r\n')
   fill()
   prompt()
   return (data: string) => {

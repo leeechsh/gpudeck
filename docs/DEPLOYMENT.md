@@ -1,12 +1,12 @@
-# RackTop Hub — 协作式 GPU 预约
+# GPUDeck Hub — 协作式 GPU 预约
 
-这是基于 RackTop 的无 Slurm 团队版：中央看板、具体 GPU 预约、门户账号、企业微信通知和使用统计。Hub 与 Agent **不会执行、暂停或终止用户进程**；SSH 仍可绕过预约，因此违规使用只会被标记和通知。
+这是基于 GPUDeck 的无 Slurm 团队版：中央看板、具体 GPU 预约、门户账号、企业微信通知和使用统计。Hub 与 Agent **不会执行、暂停或终止用户进程**；SSH 仍可绕过预约，因此违规使用只会被标记和通知。
 
 ## 架构
 
 - Web：React/Vite，统一看板、预约日历、统计。
 - Hub：Rust/Axum + PostgreSQL，事务级冲突校验、Argon2 密码、服务端会话与 CSRF。
-- Agent：Rust 单二进制，每 5 秒只读 `nvidia-smi` 和 `/proc`，以 GPU UUID 上报。
+- Agent：Rust 单二进制，每 5 秒只读 `nvidia-smi`、`/proc` 和 `/etc/passwd`，以 GPU UUID 上报；不会修改系统用户。
 - 通知：企业微信群机器人；支持预约提醒、未签到、未预约使用和超时占用，均做幂等去重。
 
 ## Hub 部署
@@ -24,11 +24,15 @@ docker compose up -d --build
 ## 节点接入
 
 1. 管理员登录 Web 后打开“管理面板 → 注册服务器节点”；也可调用 `POST /api/v1/admin/nodes` 创建节点。响应中的 Agent token 只显示一次。
-2. 构建：`cargo build --release -p racktop-agent`。
-3. 在现有账号 Ansible inventory 中增加 Server3，保持既有 UID/GID/SSH 公钥流程；为每台主机设置独立 `racktop_node_id`、`racktop_agent_token`。
+2. 构建：`cargo build --release -p gpudeck-agent`。
+3. 在现有账号 Ansible inventory 中增加 Server3，保持既有 UID/GID/SSH 公钥流程；为每台主机设置独立 `gpudeck_node_id`、`gpudeck_agent_token`。
 4. 运行 `deploy/ansible/install-agent.yml`。Agent 用户无需 Docker、sudo 或写 GPU 权限。
 
 管理员可通过 `GET /api/v1/admin/nodes` 查看节点注册、启用状态和最近上报时间；普通用户访问管理接口会返回 403。
+
+## 系统用户同步
+
+Agent 会采集各节点 UID 不小于 1000、具有可登录 shell 的 Linux 用户（排除 `nobody`），Hub 按用户名跨节点去重并自动创建普通账号。初始密码为 `用户名@123456`；首次登录只能查看身份、退出或修改密码，完成改密后才可使用资源看板和预约功能。管理员也可在管理面板点击“同步系统用户”补做同步。
 
 ## 默认规则
 
@@ -45,6 +49,6 @@ npm ci
 npm run dev
 ```
 
-Hub Web 默认启用。若要运行原 RackTop 桌面 UI，设置 `VITE_RACKTOP_HUB=false`。
+Hub Web 默认启用。若要运行原 GPUDeck 桌面 UI，设置 `VITE_GPUDECK_HUB=false`。
 
-本机部署默认只绑定 `127.0.0.1`。需要通过 Tailscale 接入节点时，将 `.env` 中的 `RACKTOP_BIND_ADDRESS` 和 `RACKTOP_PUBLIC_URL` 分别改为服务器的 Tailscale IP 与完整 URL；不要直接绑定公网地址并继续使用明文 HTTP。
+本机部署默认只绑定 `127.0.0.1`。需要通过 Tailscale 接入节点时，将 `.env` 中的 `GPUDECK_BIND_ADDRESS` 和 `GPUDECK_PUBLIC_URL` 分别改为服务器的 Tailscale IP 与完整 URL；不要直接绑定公网地址并继续使用明文 HTTP。
