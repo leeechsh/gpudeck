@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Activity } from 'lucide-react'
 import App from '../App'
 import { hubApi, User } from './api'
+import { HubProvider } from './HubFeatures'
 import './hub.css'
 
 export default function HubApp() {
@@ -12,7 +13,7 @@ export default function HubApp() {
   useEffect(() => { hubApi.me().then(setUser).catch(() => undefined).finally(() => setLoading(false)) }, [])
 
   if (loading) return <div className="hub-gate"><span className="brand__mark"><Activity size={22}/></span><p>正在连接 RackTop Hub…</p></div>
-  if (user) return <App />
+  if (user) return <HubProvider user={user} onLogout={() => setUser(null)}><App /></HubProvider>
 
   return <div className="hub-gate"><form className="panel hub-login" onSubmit={async event => {
     event.preventDefault()
