@@ -47,7 +47,6 @@ import {
   Plus,
   RefreshCw,
   RotateCcw,
-  Search,
   Server as ServerIcon,
   Settings,
   ShieldAlert,
@@ -97,7 +96,6 @@ import { currentUserProcessCount, visibleCurrentUserCpuUtilization } from './uti
 import { automaticFleetSort, FLEET_SORT_MODE_STORAGE_KEY, initialFleetSortMode, sortFleetServers, type FleetSort, type FleetSortMode } from './utils/fleetSort'
 import { afterNextPaint } from './utils/afterPaint'
 import { previewServerOrder, serverDropTarget, type ServerDropPlacement } from './utils/serverOrder'
-import { serverMatchesSearch } from './utils/serverSearch'
 import { updateSharedGpuWarnings, type MineProcessWarning, type SharedGpuWatchMap } from './utils/mineProcessWarnings'
 import { canViewDetailTab } from './utils/detailTabs'
 import { gpuContextName, serverDisplayName } from './utils/serverName'
@@ -284,7 +282,6 @@ function App() {
   const [selectedServerId, setSelectedServerId] = useState<string | null>(null)
   const [selectedTab, setSelectedTab] = useState<DetailTab>(() => browserPreviewState === 'terminal' ? 'terminal' : browserPreviewState === 'notifications' ? 'connection' : 'overview')
   const [selectedGpuUuid, setSelectedGpuUuid] = useState<string | null>(null)
-  const [search, setSearch] = useState('')
   const [draggedServerId, setDraggedServerId] = useState<string | null>(null)
   const draggedServerIdRef = useRef<string | null>(null)
   const dragOriginalServersRef = useRef<Server[] | null>(null)
@@ -1121,9 +1118,7 @@ function App() {
     void api.updateTraySummary(settings.menuBarMode, reservationPending, processWarnings)
   }, [idleReservations, mineProcessWarnings, settings])
 
-  const visibleServers = useMemo(() => {
-    return servers.filter((server) => serverMatchesSearch(server, snapshots[server.id], search))
-  }, [servers, snapshots, search])
+  const visibleServers = servers
 
   const idleGpuItems = useMemo(() => rankIdleGpuItems(servers, snapshots, idleFilterHistory, idleFilters), [servers, snapshots, idleFilterHistory, idleFilters])
   const projectRecentRunAt = useMemo(() => {
@@ -1457,7 +1452,7 @@ function App() {
   }
 
   function previewServerMove(sourceId: string, targetId: string, placement: ServerDropPlacement) {
-    if (!sourceId || search) return
+    if (!sourceId) return
     const original = dragOriginalServersRef.current ?? servers
     const current = dragPreviewServersRef.current ?? original
     const next = previewServerOrder(original, sourceId, targetId, placement)
@@ -1518,7 +1513,7 @@ function App() {
   }
 
   function beginServerMouseDrag(event: MouseEvent<HTMLSpanElement>, serverId: string) {
-    if (event.button !== 0 || search) return
+    if (event.button !== 0) return
     event.preventDefault()
     event.stopPropagation()
     dragMouseCleanupRef.current?.()
@@ -1652,7 +1647,6 @@ function App() {
           {hub?.user.role === 'admin' && <button className={mainView === 'hub-admin' ? 'is-active' : ''} onClick={() => setMainView('hub-admin')}><ShieldAlert size={17} />管理面板</button>}
         </nav>
         <div className="sidebar__section-header"><span>服务器</span><span>{totals.online}/{servers.length}</span></div>
-        <div className="search-field"><Search size={14} /><input aria-label="搜索服务器" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="搜索" />{search && <button onClick={() => setSearch('')} aria-label="清除搜索"><X size={13} /></button>}</div>
         <div className="server-list">
           {visibleServers.map((server) => {
             const snapshot = snapshots[server.id]
@@ -1675,7 +1669,7 @@ function App() {
               </button>
             )
           })}
-          {visibleServers.length === 0 && <p className="empty-copy">没有匹配的服务器</p>}
+          {visibleServers.length === 0 && <p className="empty-copy">暂无服务器</p>}
         </div>
         {hub && <GpuOccupancyPanel snapshots={snapshots} />}
         <div className="sidebar__footer">
