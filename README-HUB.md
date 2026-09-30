@@ -23,10 +23,12 @@ docker compose up -d --build
 
 ## 节点接入
 
-1. 管理员登录后调用 `POST /api/v1/admin/nodes` 创建节点；响应中的 Agent token 只显示一次。
+1. 管理员登录 Web 后打开“管理面板 → 注册服务器节点”；也可调用 `POST /api/v1/admin/nodes` 创建节点。响应中的 Agent token 只显示一次。
 2. 构建：`cargo build --release -p racktop-agent`。
 3. 在现有账号 Ansible inventory 中增加 Server3，保持既有 UID/GID/SSH 公钥流程；为每台主机设置独立 `racktop_node_id`、`racktop_agent_token`。
 4. 运行 `deploy/ansible/install-agent.yml`。Agent 用户无需 Docker、sudo 或写 GPU 权限。
+
+管理员可通过 `GET /api/v1/admin/nodes` 查看节点注册、启用状态和最近上报时间；普通用户访问管理接口会返回 403。
 
 ## 默认规则
 

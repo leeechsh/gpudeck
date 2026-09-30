@@ -1254,7 +1254,7 @@ checksum = "f8dcc9c7d52a811697d2151c701e0d08956f92b0e24136cf4cf27b57a6a0d9bf"
 
 [[package]]
 name = "racktop-agent"
-version = "1.28.0"
+version = "1.29.0"
 dependencies = [
  "anyhow",
  "chrono",
@@ -1269,7 +1269,7 @@ dependencies = [
 
 [[package]]
 name = "racktop-domain"
-version = "1.28.0"
+version = "1.29.0"
 dependencies = [
  "chrono",
  "serde",
@@ -1279,7 +1279,7 @@ dependencies = [
 
 [[package]]
 name = "racktop-hub"
-version = "1.28.0"
+version = "1.29.0"
 dependencies = [
  "anyhow",
  "argon2",

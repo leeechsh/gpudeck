@@ -35,7 +35,7 @@ pub fn router() -> Router<Arc<AppState>> {
         .route("/reservations/{id}/end", post(end_early))
         .route("/statistics", get(statistics))
         .route("/agent/snapshot", post(agent_snapshot))
-        .route("/admin/nodes", post(create_node))
+        .route("/admin/nodes", get(list_nodes).post(create_node))
         .route("/admin/users", get(list_users).post(create_user))
 }
 
@@ -385,6 +385,31 @@ struct CreateNode {
     hostname: String,
 }
 
+fn validate_node_registration(name: &str, hostname: &str) -> Result<(), ApiError> {
+    if name.trim().is_empty() || hostname.trim().is_empty() {
+        return Err(ApiError(StatusCode::UNPROCESSABLE_ENTITY, "节点名称和主机名不能为空".into()));
+    }
+    if name.trim().len() > 120 || hostname.trim().len() > 255 {
+        return Err(ApiError(StatusCode::UNPROCESSABLE_ENTITY, "节点名称或主机名过长".into()));
+    }
+    Ok(())
+}
+
+async fn list_nodes(
+    State(state): State<Arc<AppState>>,
+    admin: AuthUser,
+) -> Result<Json<Value>, ApiError> {
+    admin.require_admin()?;
+    let rows = sqlx::query("SELECT id,name,hostname,enabled,last_seen_at,created_at FROM nodes ORDER BY created_at DESC")
+        .fetch_all(&state.pool).await?;
+    Ok(Json(json!({"nodes": rows.into_iter().map(|row| json!({
+        "id": row.get::<Uuid,_>("id"), "name": row.get::<String,_>("name"),
+        "hostname": row.get::<String,_>("hostname"), "enabled": row.get::<bool,_>("enabled"),
+        "lastSeenAt": row.get::<Option<DateTime<Utc>>,_>("last_seen_at"),
+        "createdAt": row.get::<DateTime<Utc>,_>("created_at")
+    })).collect::<Vec<_>>() })))
+}
+
 async fn create_node(
     State(state): State<Arc<AppState>>,
     user: AuthUser,
@@ -393,16 +418,22 @@ async fn create_node(
 ) -> Result<(StatusCode, Json<Value>), ApiError> {
     user.require_admin()?;
     user.require_csrf(&headers)?;
+    validate_node_registration(&input.name, &input.hostname)?;
+    let name = input.name.trim();
+    if sqlx::query_scalar::<_, bool>("SELECT EXISTS(SELECT 1 FROM nodes WHERE lower(name)=lower($1))")
+        .bind(name).fetch_one(&state.pool).await? {
+        return Err(ApiError(StatusCode::CONFLICT, "节点名称已存在".into()));
+    }
     let id = Uuid::new_v4();
     let token = auth::random_token(32);
     sqlx::query("INSERT INTO nodes(id,name,hostname,token_hash) VALUES($1,$2,$3,$4)")
         .bind(id)
-        .bind(input.name.trim())
+        .bind(name)
         .bind(input.hostname.trim())
         .bind(auth::sha256(&token))
         .execute(&state.pool)
         .await?;
-    Ok((StatusCode::CREATED, Json(json!({"id":id,"token":token}))))
+    Ok((StatusCode::CREATED, Json(json!({"id":id,"token":token,"hubUrl":state.public_url}))))
 }
 
 async fn agent_snapshot(
@@ -638,5 +669,13 @@ mod tests {
         let mut empty_purpose = reservation(Duration::hours(1));
         empty_purpose.purpose = "   ".into();
         assert!(validate_reservation(&empty_purpose, 2).is_err());
+    }
+
+    #[test]
+    fn validates_node_registration_fields() {
+        assert!(validate_node_registration("WHUServer-H200", "WHUServer-H200").is_ok());
+        assert!(validate_node_registration("  ", "WHUServer-H200").is_err());
+        assert!(validate_node_registration("WHUServer-H200", " ").is_err());
+        assert!(validate_node_registration(&"n".repeat(121), "host").is_err());
     }
 }

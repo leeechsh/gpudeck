@@ -3,6 +3,8 @@ export type Gpu = { id: string; uuid: string; index: number; name: string; memor
 export type Node = { id: string; name: string; hostname: string; lastSeenAt?: string; gpus: Gpu[] }
 export type Reservation = { id: string; ownerId: string; ownerName: string; gpuIds: string[]; startsAt: string; endsAt: string; projectName: string; purpose: string; status: string; checkedInAt?: string }
 export type User = { id: string; username: string; displayName: string; linuxUsername: string; role: string; concurrentGpuLimit: number; csrfToken: string }
+export type AdminNode = { id: string; name: string; hostname: string; enabled: boolean; lastSeenAt?: string; createdAt: string }
+export type NodeRegistration = { id: string; token: string; hubUrl: string }
 
 let csrf = ''
 
@@ -24,5 +26,7 @@ export const hubApi = {
   statistics: () => request<{ users: { username: string; gpuHours: number; coverageSeconds: number }[] }>('/statistics'),
   createReservation: (body: object) => request('/reservations', { method: 'POST', body: JSON.stringify(body) }),
   action: (id: string, action: 'check-in' | 'end' | 'cancel') => request(`/reservations/${id}/${action}`, { method: 'POST' }),
+  adminNodes: () => request<{ nodes: AdminNode[] }>('/admin/nodes'),
+  registerNode: (name: string, hostname: string) => request<NodeRegistration>('/admin/nodes', { method: 'POST', body: JSON.stringify({ name, hostname }) }),
   logout: () => request('/auth/logout', { method: 'POST' }),
 }

@@ -79,7 +79,7 @@ import { isRemoteSyncFresh, RemoteSyncCoordinator, RemoteSyncStatus, REMOTE_SYNC
 import { ResourceTrend } from './components/ResourceTrend'
 import { ServerForm } from './components/ServerForm'
 import { SshTerminal } from './components/SshTerminal'
-import { HubAccount, HubReservationPage, HubReservationSheet, useHub } from './hub/HubFeatures'
+import { HubAccount, HubAdminPage, HubNodeRegistrationSheet, HubReservationPage, HubReservationSheet, useHub } from './hub/HubFeatures'
 import { StatusPill } from './components/StatusPill'
 import { TrendChart } from './components/TrendChart'
 import { UsageDistribution } from './components/UsageDistribution'
@@ -313,8 +313,9 @@ function App() {
   const [ignoredUpdateVersion, setIgnoredUpdateVersion] = useState(loadIgnoredUpdateVersion)
   const [importingConfig, setImportingConfig] = useState(false)
   const [importDrafts, setImportDrafts] = useState<ServerDraft[] | null>(null)
-  const [mainView, setMainView] = useState<'server' | 'fleet' | 'idle' | 'mine' | 'projects' | 'hub-reservations'>(() => browserPreviewState === 'terminal' || browserPreviewState === 'reconnecting' || browserPreviewState === 'notifications' ? 'server' : 'fleet')
+  const [mainView, setMainView] = useState<'server' | 'fleet' | 'idle' | 'mine' | 'projects' | 'hub-reservations' | 'hub-admin'>(() => browserPreviewState === 'terminal' || browserPreviewState === 'reconnecting' || browserPreviewState === 'notifications' ? 'server' : 'fleet')
   const [showHubReservation, setShowHubReservation] = useState(false)
+  const [showHubNodeRegistration, setShowHubNodeRegistration] = useState(false)
   const [projects, setProjects] = useState<Project[]>([])
   const [projectEditor, setProjectEditor] = useState<Project | null | 'new'>(null)
   const [projectPendingDelete, setProjectPendingDelete] = useState<Project | null>(null)
@@ -1645,6 +1646,7 @@ function App() {
           <button className={mainView === 'mine' ? 'is-active' : ''} onClick={() => setMainView('mine')}><UserRound size={17} />我的进程 <span className="nav-count">{servers.reduce((sum, server) => sum + (snapshots[server.id] ? currentUserProcessCount(snapshots[server.id]) : 0), 0)}</span></button>
           <button className={mainView === 'projects' ? 'is-active' : ''} onClick={() => setMainView('projects')}><FolderGit2 size={17} />我的项目 <span className="nav-count">{projects.length}</span></button>
           {hub && <button className={mainView === 'hub-reservations' ? 'is-active' : ''} onClick={() => setMainView('hub-reservations')}><CalendarDays size={17} />预约日历 <span className="nav-count">{hub.reservations.filter((item) => ['scheduled', 'active', 'overrun'].includes(item.status)).length}</span></button>}
+          {hub?.user.role === 'admin' && <button className={mainView === 'hub-admin' ? 'is-active' : ''} onClick={() => setMainView('hub-admin')}><ShieldAlert size={17} />管理面板</button>}
         </nav>
         <div className="sidebar__section-header"><span>服务器</span><span>{totals.online}/{servers.length}</span></div>
         <div className="search-field"><Search size={14} /><input aria-label="搜索服务器" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="搜索" />{search && <button onClick={() => setSearch('')} aria-label="清除搜索"><X size={13} /></button>}</div>
@@ -1683,8 +1685,8 @@ function App() {
       <main className="workspace">
         <header className="topbar" onMouseDown={startWindowDrag} onDoubleClick={(event) => void toggleWindowMaximize(event)}>
           <div className="topbar__title">
-            <p className="eyebrow">{mainView === 'hub-reservations' ? 'GPU 协作预约' : mainView === 'projects' ? '跨服务器文件同步' : mainView === 'idle' ? '资源发现' : mainView === 'mine' ? '当前用户任务' : mainView === 'fleet' ? `${totals.online} / ${servers.length} 台在线` : selectedServer ? selectedServer.host : '所有服务器'}</p>
-            <h1>{mainView === 'hub-reservations' ? '预约日历' : mainView === 'projects' ? '我的项目' : mainView === 'idle' ? '寻找空闲算力' : mainView === 'mine' ? '我的进程' : mainView === 'fleet' ? '算力总览' : selectedServer ? serverDisplayName(selectedServer.name) : 'RackTop 总览'}</h1>
+            <p className="eyebrow">{mainView === 'hub-admin' ? 'Hub 系统管理' : mainView === 'hub-reservations' ? 'GPU 协作预约' : mainView === 'projects' ? '跨服务器文件同步' : mainView === 'idle' ? '资源发现' : mainView === 'mine' ? '当前用户任务' : mainView === 'fleet' ? `${totals.online} / ${servers.length} 台在线` : selectedServer ? selectedServer.host : '所有服务器'}</p>
+            <h1>{mainView === 'hub-admin' ? '管理面板' : mainView === 'hub-reservations' ? '预约日历' : mainView === 'projects' ? '我的项目' : mainView === 'idle' ? '寻找空闲算力' : mainView === 'mine' ? '我的进程' : mainView === 'fleet' ? '算力总览' : selectedServer ? serverDisplayName(selectedServer.name) : 'RackTop 总览'}</h1>
           </div>
           <div className="topbar__actions">
             {(manualRefreshProgress || (remoteHistoryServerKey && remoteSyncStatus)) && <span className="remote-sync-slot">{manualRefreshProgress ? <span className="remote-sync-status remote-sync-status--syncing" role="status" aria-live="polite">正在刷新全部 · {manualRefreshProgress.completed}/{manualRefreshProgress.total} 台</span> : remoteSyncStatus && <RemoteSyncStatus status={remoteSyncStatus} onOpenFailure={() => {
@@ -1709,6 +1711,8 @@ function App() {
             <EmptyState onboarding={<OnboardingChecklist steps={onboardingSteps} previewStep={onboardingPreviewStep} collapsed={onboardingCollapsed} dismissed={onboardingDismissed} useActualState={onboardingUseActualState} showPreviewControls={!api.isDesktop} onPreviewStepChange={setOnboardingPreviewStep} onCollapsedChange={setOnboardingCollapsed} onDismiss={() => { localStorage.setItem(ONBOARDING_DISMISSED_KEY, 'true'); setOnboardingDismissed(true); setToast('已隐藏新手引导，可在“设置 → 通用”中重新显示') }} onUseActualStateChange={setOnboardingUseActualState} />} onAdd={() => { setEditingServer(null); setShowServerForm(true) }} onImport={importConfig} />
           ) : servers.length === 0 ? (
             <EmptyState onAdd={() => { setEditingServer(null); setShowServerForm(true) }} onImport={importConfig} />
+          ) : mainView === 'hub-admin' && hub?.user.role === 'admin' ? (
+            <HubAdminPage onRegister={() => setShowHubNodeRegistration(true)} />
           ) : mainView === 'hub-reservations' ? (
             <HubReservationPage onCreate={() => setShowHubReservation(true)} />
           ) : mainView === 'projects' ? (
@@ -1773,6 +1777,7 @@ function App() {
       {reservationEditor && <IdleReservationSheet reservation={reservationEditor.reservation} filters={reservationEditor.filters} availableGpuKeys={reservationEditorItems.filter((item) => item.available).map(({ server, gpu }) => idleReservationGpuKey(server.id, gpu.uuid))} onClose={() => setReservationEditor(null)} onSave={saveIdleReservation} />}
       {showReservationCenter && <IdleReservationCenter reservations={idleReservations} warnings={gpuMemoryStallWarnings} onClose={() => setShowReservationCenter(false)} onEdit={(reservation) => { setShowReservationCenter(false); setReservationEditor({ filters: reservation.filters, reservation }) }} onStatusChange={setIdleReservationStatus} onClearPending={clearReservationPending} onDelete={removeIdleReservation} onIgnoreWarning={ignoreGpuMemoryStallWarning} />}
       {hub && showHubReservation && <HubReservationSheet onClose={() => setShowHubReservation(false)} />}
+      {hub?.user.role === 'admin' && showHubNodeRegistration && <HubNodeRegistrationSheet onClose={() => setShowHubNodeRegistration(false)} />}
       {quickTerminal && (() => { const accelerator = snapshots[quickTerminal.server.id] ? acceleratorLabel(snapshots[quickTerminal.server.id]) : 'GPU'; return <div className="scrim quick-terminal-scrim" onMouseDown={(event) => event.target === event.currentTarget && setQuickTerminal(null)}><section className="sheet quick-terminal-sheet" role="dialog" aria-modal="true" aria-label={`${quickTerminal.server.name}${quickTerminal.gpu ? ` ${accelerator} ${quickTerminal.gpu.index}` : ''} 终端`}><header className="sheet__header"><div><p className="eyebrow">{quickTerminal.gpu ? `${accelerator} 固定终端` : 'SSH 终端'}</p><h2>{quickTerminal.server.name}{quickTerminal.gpu ? ` · ${accelerator} ${quickTerminal.gpu.index}` : ''}</h2></div><button className="icon-button" onClick={() => setQuickTerminal(null)} aria-label="关闭"><X size={18} /></button></header><SshTerminal serverId={quickTerminal.server.id} serverName={quickTerminal.server.name} gpuIndex={quickTerminal.gpu?.index} acceleratorVendor={snapshots[quickTerminal.server.id]?.acceleratorVendor} onNotice={setToast} /></section></div> })()}
       {toast && <div className="toast" role="status"><AlertCircle size={17} /><span>{toast}</span><button onClick={() => setToast(null)} aria-label="关闭"><X size={14} /></button></div>}
       {zoomNotice !== null && api.isDesktop && <div className="zoom-pill" role="status" aria-live="polite"><span>{Math.round(zoomNotice * 100)}%</span><button type="button" onClick={() => zoomAdjustRef.current(-0.05)} aria-label="缩小">−</button><button type="button" onClick={() => zoomAdjustRef.current(0.05)} aria-label="放大">+</button><button type="button" onClick={() => { zoomAdjustRef.current(1 - zoomNotice) }} aria-label="重置缩放">重置</button></div>}
