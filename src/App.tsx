@@ -72,6 +72,7 @@ import { HistoryHeatmaps, StorageWaffleList } from './components/HistoryHeatmap'
 import { MetricBar } from './components/MetricBar'
 import { ManagedProcessView, type ManagedLaunchIntent } from './components/ManagedProcessView'
 import { OnboardingChecklist, type OnboardingStep } from './components/OnboardingChecklist'
+import { GpuOccupancyPanel } from './components/GpuOccupancyPanel'
 import { ProcessBlocks, type ProcessTerminationTarget } from './components/ProcessBlocks'
 import { ProjectForm } from './components/ProjectForm'
 import { ProjectConflictDialog, ProjectDeleteDialog, ProjectView, syncableProjectTargets } from './components/ProjectView'
@@ -1676,6 +1677,7 @@ function App() {
           })}
           {visibleServers.length === 0 && <p className="empty-copy">没有匹配的服务器</p>}
         </div>
+        {hub && <GpuOccupancyPanel snapshots={snapshots} />}
         <div className="sidebar__footer">
           {!hub && <><button onClick={() => { setEditingServer(null); setShowServerForm(true) }}><Plus size={16} />添加服务器</button>
           <button onClick={importConfig} disabled={importingConfig}><Download size={16} />{importingConfig ? '正在读取 SSH Config…' : '导入 SSH Config'}</button></>}

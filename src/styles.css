@@ -127,6 +127,31 @@ button:focus-visible, input:focus-visible, select:focus-visible, summary:focus-v
 .server-row.is-selected .server-row__chevron { opacity: 1; transform: translateX(0); }
 .own-task-dot { display: grid; place-items: center; width: 18px; height: 18px; border-radius: 999px; color: white; background: var(--own-accent); }
 .empty-copy { padding: 16px 10px; color: var(--text-tertiary); font-size: calc(12px + var(--font-adjust, 0px)); text-align: center; }
+.gpu-occupancy-panel { flex: 0 1 auto; max-height: min(390px, 44vh); margin: 8px 0 10px; padding: 10px; overflow-y: auto; border: 1px solid var(--border); border-radius: 12px; background: color-mix(in srgb, var(--surface-solid) 48%, transparent); scrollbar-width: thin; }
+.gpu-occupancy-panel__header, .gpu-occupancy-panel__section-title, .gpu-occupancy-panel__availability-title, .gpu-occupancy-panel__availability-count, .gpu-occupancy-panel__row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.gpu-occupancy-panel__header { padding: 1px 1px 8px; border-bottom: 1px solid var(--border); color: var(--text-secondary); font-size: calc(10px + var(--font-adjust, 0px)); font-weight: 700; }
+.gpu-occupancy-panel__header span, .gpu-occupancy-panel__availability-title span, .gpu-occupancy-panel__name { display: inline-flex; align-items: center; gap: 6px; min-width: 0; }
+.gpu-occupancy-panel__header strong { color: var(--text-tertiary); font-size: calc(10px + var(--font-adjust, 0px)); font-variant-numeric: tabular-nums; }
+.gpu-occupancy-panel__availability { padding: 10px 1px 9px; border-bottom: 1px solid var(--border); }
+.gpu-occupancy-panel__availability-title { color: var(--text-secondary); font-size: calc(10px + var(--font-adjust, 0px)); font-weight: 650; }
+.gpu-occupancy-panel__availability-title svg { color: var(--green); }
+.gpu-occupancy-panel__availability-title strong { color: var(--green); font-size: calc(11px + var(--font-adjust, 0px)); font-variant-numeric: tabular-nums; }
+.gpu-occupancy-panel__track { height: 5px; margin: 8px 0 6px; overflow: hidden; border-radius: 999px; background: var(--surface-subtle); }
+.gpu-occupancy-panel__track span { display: block; height: 100%; border-radius: inherit; background: var(--green); transition: width 220ms var(--ease-out); }
+.gpu-occupancy-panel__availability-count { color: var(--text-tertiary); font-size: calc(9px + var(--font-adjust, 0px)); }
+.gpu-occupancy-panel__availability-count strong { color: var(--text); font-size: calc(14px + var(--font-adjust, 0px)); font-variant-numeric: tabular-nums; }
+.gpu-occupancy-panel__section { padding: 9px 0 0; }
+.gpu-occupancy-panel__section + .gpu-occupancy-panel__section { padding-top: 10px; }
+.gpu-occupancy-panel__section-title { padding: 0 1px 5px; color: var(--text-tertiary); font-size: calc(9px + var(--font-adjust, 0px)); font-weight: 700; }
+.gpu-occupancy-panel__row { min-height: 29px; padding: 5px 6px; border-radius: 7px; color: var(--text-secondary); font-size: calc(10px + var(--font-adjust, 0px)); }
+.gpu-occupancy-panel__row + .gpu-occupancy-panel__row { margin-top: 3px; }
+.gpu-occupancy-panel__row:hover { background: var(--surface-subtle); }
+.gpu-occupancy-panel__name { overflow: hidden; }
+.gpu-occupancy-panel__name svg { flex: 0 0 auto; color: var(--text-tertiary); }
+.gpu-occupancy-panel__name strong { overflow: hidden; color: var(--text-secondary); font-size: calc(10px + var(--font-adjust, 0px)); font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.gpu-occupancy-panel__row b { flex: 0 0 auto; color: var(--text-tertiary); font-size: calc(10px + var(--font-adjust, 0px)); font-variant-numeric: tabular-nums; }
+.gpu-occupancy-panel__row b.is-available { color: var(--green); }
+.gpu-occupancy-panel__empty { margin: 0; padding: 6px; color: var(--text-tertiary); font-size: calc(9px + var(--font-adjust, 0px)); }
 .sidebar__footer { display: grid; gap: 2px; padding-top: 8px; border-top: 1px solid var(--border); }
 .sidebar__footer button { color: var(--text-secondary); font-size: calc(12px + var(--font-adjust, 0px)); }
 .workspace { display: grid; grid-template-rows: auto minmax(0, 1fr); min-width: 0; min-height: 0; overflow: hidden; background: var(--bg); }
