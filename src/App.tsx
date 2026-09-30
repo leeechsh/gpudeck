@@ -80,6 +80,7 @@ import { ResourceTrend } from './components/ResourceTrend'
 import { ServerForm } from './components/ServerForm'
 import { SshTerminal } from './components/SshTerminal'
 import { HubAccount, HubAdminPage, HubNodeRegistrationSheet, HubReservationPage, HubReservationSheet, useHub } from './hub/HubFeatures'
+import { HubProcesses } from './hub/HubProcesses'
 import { StatusPill } from './components/StatusPill'
 import { TrendChart } from './components/TrendChart'
 import { UsageDistribution } from './components/UsageDistribution'
@@ -1717,6 +1718,8 @@ function App() {
             <ProjectView projects={projects} recentRunAt={projectRecentRunAt} servers={servers} busyTargets={busyProjectTargets} syncProgress={projectSyncProgress} preparingProjectIds={preparingProjectIds} onAdd={() => setProjectEditor('new')} onLaunch={(project) => { setManagedLaunchIntent({ id: crypto.randomUUID(), projectId: project.id }); setMainView('mine') }} onEdit={setProjectEditor} onDelete={setProjectPendingDelete} onInspect={inspectProject} onSync={(project, targetServerId) => { const target = project.targets.find((item) => item.serverId === targetServerId); if (target?.status === 'conflict') setProjectConflictTarget({ project, targetServerId }); else void syncProjectTarget(project, targetServerId) }} onCancel={(projectId, targetServerId) => void cancelProjectTarget(projectId, targetServerId)} onSyncAll={(project) => void syncAllProjectTargets(project)} />
           ) : mainView === 'idle' ? (
             <IdleGpuView servers={servers} snapshots={snapshots} items={idleGpuItems} filters={idleFilters} currentReservation={currentIdleReservation} onFiltersChange={setIdleFilters} onReserve={() => setReservationEditor({ filters: { ...idleFilters }, reservation: currentIdleReservation })} sortRevision={manualRefreshRevision} onLaunch={(server, gpu) => { setManagedLaunchIntent({ id: crypto.randomUUID(), serverId: server.id, gpuUuid: gpu.uuid }); setMainView('mine') }} onQuickTerminal={(server, gpu) => setQuickTerminal({ server, gpu })} onSelect={(serverId, gpuUuid) => { setSelectedServerId(serverId); setSelectedGpuUuid(gpuUuid); setSelectedTab('gpu'); setMainView('server') }} onReserveGpu={(server, gpu) => setReservationEditor({ filters: { ...idleFilters, duration: 0, targetServerId: server.id, targetGpuUuid: gpu.uuid } })} />
+          ) : mainView === 'mine' && hub ? (
+            <HubProcesses servers={servers} snapshots={snapshots} username={hub.user.linuxUsername} onRefresh={runManualRefreshAll} />
           ) : mainView === 'mine' ? (
             <ManagedProcessView servers={servers} snapshots={snapshots} projects={projects} warnings={mineProcessWarnings} launchIntent={managedLaunchIntent} onLaunchIntentConsumed={() => setManagedLaunchIntent(null)} onDismissWarning={(warningId) => { ignoredMineProcessWarningsRef.current.add(warningId); localStorage.setItem('gpudeck.ignoredMineProcessWarnings.v1', JSON.stringify([...ignoredMineProcessWarningsRef.current])); setMineProcessWarnings((current) => current.filter((warning) => warning.id !== warningId)) }} onOpenTerminal={(serverId) => { const server = servers.find((item) => item.id === serverId); if (server) setQuickTerminal({ server }) }} onNotice={setToast} onRefreshServer={(serverId) => refreshServer(serverId)} />
           ) : mainView === 'fleet' ? (
