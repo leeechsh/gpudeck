@@ -21,6 +21,14 @@ docker compose up -d --build
 
 数据库和初始管理员密码由一次性初始化容器生成并保存在仅 Docker 可访问的命名卷中。使用 `docker compose exec secrets-init cat /secrets/admin_password` 在服务器终端读取初始密码。公网部署前请把 `.env` 中域名和企业微信 webhook 改为真实值；Caddy 可自动签发 HTTPS 证书。初始管理员只会在数据库没有管理员时创建。
 
+## 全局预约设置
+
+管理员打开“管理面板 → 全局预约设置”，设置每个账号的并发 GPU 上限（1–14 张），点击“保存并应用到所有用户”。初始值为 2；所有现有账号（包括管理员和停用账号）统一更新，新注册、自动创建或手动同步的账号继承该值。
+
+上限按任一时刻预约的 GPU 总数计算，不是预约条数，也不限制实际进程。降低上限不取消已有预约，新预约按新值校验；在线页面在下一次刷新时更新账号上限。保存失败保留输入，可重试。
+
+管理接口：`GET /api/v1/admin/settings` 查询，`PUT /api/v1/admin/settings` 保存，JSON 请求体为 `{"concurrentGpuLimit":4}`。保存需要管理员会话及 `X-CSRF-Token`，返回 `concurrentGpuLimit` 和 `updatedUserCount`；修改会记录审计事件。
+
 ## 节点接入
 
 1. 管理员登录 Web 后打开“管理面板 → 注册服务器节点”；也可调用 `POST /api/v1/admin/nodes` 创建节点。响应中的 Agent token 只显示一次。

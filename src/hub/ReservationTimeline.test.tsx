@@ -1,15 +1,16 @@
 // @vitest-environment jsdom
 import { act } from 'react'
 import { createRoot } from 'react-dom/client'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { HubProvider, HubReservationSheet } from './HubFeatures'
 import { HubApiError, hubApi, type Reservation, type User } from './api'
 import { ReservationTimeline, dateInput, reservationPosition } from './ReservationTimeline'
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
-vi.mock('./api', async () => ({...await vi.importActual('./api'),hubApi: { resources: vi.fn(), reservations: vi.fn(), action: vi.fn(), createReservation: vi.fn() }}))
+vi.mock('./api', async () => ({...await vi.importActual('./api'),hubApi: { me: vi.fn(), resources: vi.fn(), reservations: vi.fn(), action: vi.fn(), createReservation: vi.fn() }}))
 afterEach(() => vi.clearAllMocks())
 const user = {id:'alice',username:'alice',linuxUsername:'alice',displayName:'Alice',role:'member',concurrentGpuLimit:2} as User
+beforeEach(() => vi.mocked(hubApi.me).mockResolvedValue(user))
 const today = new Date(); today.setHours(0,0,0,0)
 const booking = {id:'booking',ownerId:'bob',ownerName:'Bob',projectName:'Train',purpose:'Training',gpuIds:['g0','g1'],startsAt:new Date(today.getTime()+3600000).toISOString(),endsAt:new Date(today.getTime()+7200000).toISOString(),status:'scheduled'} as Reservation
 describe('reservation timeline', () => {

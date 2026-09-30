@@ -46,3 +46,8 @@
 .reservation-warning { color: var(--orange); background: color-mix(in srgb,var(--orange) 8%,var(--surface)); padding: 8px 10px; border-radius: 6px; font-size: 11px; }
 .reservation-warning ul, .hub-form-error ul { margin: 6px 0; padding-left: 18px; }.reservation-warning li, .hub-form-error li { margin: 5px 0; }
 .reservation-submit-error { white-space: pre-wrap; }
+.hub-global-settings { padding: 20px; display: grid; gap: 12px; }
+.hub-global-settings > label { font-weight: 600; }
+.hub-global-settings__controls { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; }
+.hub-global-settings__controls input { width: 90px; padding: 9px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: inherit; }
+.hub-global-settings p { margin: 0; color: var(--text-secondary); font-size: 13px; line-height: 1.6; }

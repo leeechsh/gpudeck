@@ -39,6 +39,10 @@ pub fn router() -> Router<Arc<AppState>> {
         .route("/admin/nodes", get(list_nodes).post(create_node))
         .route("/admin/users", get(list_users).post(create_user))
         .route("/admin/users/sync", post(sync_system_users))
+        .route(
+            "/admin/settings",
+            get(global_settings).put(save_global_settings),
+        )
 }
 
 #[derive(Deserialize)]
@@ -246,8 +250,13 @@ async fn create_reservation(
     Json(input): Json<CreateReservation>,
 ) -> Result<(StatusCode, Json<Value>), ApiError> {
     user.require_csrf(&headers)?;
-    validate_reservation(&input, user.concurrent_gpu_limit)?;
     let mut transaction = state.pool.begin().await?;
+    // The shared lock keeps this booking and a global policy update ordered.
+    let limit: i32 =
+        sqlx::query_scalar("SELECT concurrent_gpu_limit FROM hub_settings WHERE id=true FOR SHARE")
+            .fetch_one(&mut *transaction)
+            .await?;
+    validate_reservation(&input, limit)?;
     sqlx::query("SELECT pg_advisory_xact_lock(hashtext($1))")
         .bind(user.id.to_string())
         .execute(&mut *transaction)
@@ -300,13 +309,10 @@ async fn create_reservation(
             .collect::<Vec<_>>();
         return Err(ApiError(StatusCode::CONFLICT, details.join("\n")));
     }
-    if peak > user.concurrent_gpu_limit as i64 {
+    if peak > limit as i64 {
         return Err(ApiError(
             StatusCode::CONFLICT,
-            format!(
-                "并发预约将达到 {peak} 张 GPU，超过你的 {} 张上限",
-                user.concurrent_gpu_limit
-            ),
+            format!("并发预约将达到 {peak} 张 GPU，超过你的 {} 张上限", limit),
         ));
     }
     let id = Uuid::new_v4();
@@ -618,6 +624,62 @@ struct CreateUser {
     wecom_user_id: Option<String>,
     password: String,
     role: Option<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct GlobalSettings {
+    concurrent_gpu_limit: i32,
+}
+
+async fn global_settings(
+    State(state): State<Arc<AppState>>,
+    admin: AuthUser,
+) -> Result<Json<Value>, ApiError> {
+    admin.require_admin()?;
+    let limit: i32 =
+        sqlx::query_scalar("SELECT concurrent_gpu_limit FROM hub_settings WHERE id=true")
+            .fetch_one(&state.pool)
+            .await?;
+    Ok(Json(json!({"concurrentGpuLimit": limit})))
+}
+
+async fn save_global_settings(
+    State(state): State<Arc<AppState>>,
+    admin: AuthUser,
+    headers: HeaderMap,
+    Json(input): Json<GlobalSettings>,
+) -> Result<Json<Value>, ApiError> {
+    admin.require_admin()?;
+    admin.require_csrf(&headers)?;
+    let limit = input.concurrent_gpu_limit;
+    if !(1..=14).contains(&limit) {
+        return Err(ApiError(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "并发 GPU 上限必须为 1–14 的整数".into(),
+        ));
+    }
+    let mut tx = state.pool.begin().await?;
+    let previous: i32 = sqlx::query_scalar(
+        "SELECT concurrent_gpu_limit FROM hub_settings WHERE id=true FOR UPDATE",
+    )
+    .fetch_one(&mut *tx)
+    .await?;
+    sqlx::query("UPDATE hub_settings SET concurrent_gpu_limit=$1 WHERE id=true")
+        .bind(limit)
+        .execute(&mut *tx)
+        .await?;
+    let count = sqlx::query("UPDATE users SET concurrent_gpu_limit=$1")
+        .bind(limit)
+        .execute(&mut *tx)
+        .await?
+        .rows_affected();
+    audit(&mut tx, Some(admin.id), "settings.update", "hub_settings", "global",
+        json!({"previousConcurrentGpuLimit":previous,"concurrentGpuLimit":limit,"updatedUserCount":count})).await?;
+    tx.commit().await?;
+    Ok(Json(
+        json!({"concurrentGpuLimit":limit,"updatedUserCount":count}),
+    ))
 }
 
 async fn create_user(
