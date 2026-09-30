@@ -12,6 +12,16 @@ describe('EmptyState', () => {
     expect(markup.indexOf('五步新手引导')).toBeLessThan(markup.indexOf('连接第一台服务器'))
   })
 
+  it('hides desktop connection actions in Hub mode', () => {
+    const markup = renderToStaticMarkup(
+      <EmptyState showConnectionActions={false} onAdd={vi.fn()} onImport={vi.fn()} />,
+    )
+
+    expect(markup).toContain('请联系管理员在管理面板注册服务器节点')
+    expect(markup).not.toContain('添加服务器')
+    expect(markup).not.toContain('导入配置')
+  })
+
   it('uses the guided empty state only for the zero-server fleet overview', () => {
     expect(shouldShowGuidedEmptyState('fleet', 0)).toBe(true)
     expect(shouldShowGuidedEmptyState('fleet', 1)).toBe(false)

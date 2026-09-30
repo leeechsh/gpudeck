@@ -98,6 +98,7 @@ import { afterNextPaint } from './utils/afterPaint'
 import { previewServerOrder, serverDropTarget, type ServerDropPlacement } from './utils/serverOrder'
 import { serverMatchesSearch } from './utils/serverSearch'
 import { updateSharedGpuWarnings, type MineProcessWarning, type SharedGpuWatchMap } from './utils/mineProcessWarnings'
+import { canViewDetailTab } from './utils/detailTabs'
 import { gpuContextName, serverDisplayName } from './utils/serverName'
 import { loadLaunchProfiles, loadManagedRuns } from './utils/managedRuns'
 import { detectAppPlatform } from './utils/platform'
@@ -1140,14 +1141,15 @@ function App() {
   const onboardingSteps = useMemo<OnboardingStep[]>(() => {
     const project = projects.find((item) => item.kind === 'project')
     const resources = projects.filter((item) => item.kind === 'dataset' || item.kind === 'model')
-    return [
+    const steps: OnboardingStep[] = [
       { id: 'server', title: '添加第一台服务器', description: '连接 SSH 主机并开始采集算力状态。', actionLabel: '添加服务器', completed: servers.length > 0, onAction: () => { setEditingServer(null); setShowServerForm(true) } },
       { id: 'resource', title: '添加数据集或模型', description: '保存可被多个项目复用的长期资源。', actionLabel: '添加资源', completed: resources.length > 0, onAction: () => { setMainView('projects'); setProjectEditor('new') } },
       { id: 'project', title: '添加项目并关联数据集/模型', description: '创建项目并选择运行所需的长期资源。', actionLabel: '添加项目', completed: Boolean(project && (project.datasetIds.length > 0 || project.modelIds.length > 0)), onAction: () => { setMainView('projects'); setProjectEditor(project ?? 'new') } },
       { id: 'profile', title: '创建启动配置', description: '按项目保存命令与可调超参数。', actionLabel: '创建配置', completed: loadLaunchProfiles().length > 0, onAction: () => { setManagedLaunchIntent({ id: crypto.randomUUID(), projectId: project?.id }); setMainView('mine') } },
       { id: 'task', title: '启动第一个任务', description: '选择服务器和 GPU，完成检查后启动。', actionLabel: '启动任务', completed: loadManagedRuns().length > 0, onAction: () => { setManagedLaunchIntent({ id: crypto.randomUUID(), projectId: project?.id }); setMainView('mine') } },
     ]
-  }, [mainView, projects, servers.length])
+    return hub ? steps.filter((step) => step.id !== 'server') : steps
+  }, [hub, mainView, projects, servers.length])
   const idleAvailableCount = idleGpuItems.filter((item) => item.available).length
   const currentIdleReservation = idleReservations.find((reservation) => (reservation.status === 'active' || reservation.status === 'paused') && idleReservationFiltersEqual(reservation.filters, idleFilters))
   const activeIdleReservationCount = idleReservations.filter((reservation) => reservation.status === 'active').length
@@ -1675,8 +1677,8 @@ function App() {
           {visibleServers.length === 0 && <p className="empty-copy">没有匹配的服务器</p>}
         </div>
         <div className="sidebar__footer">
-          <button onClick={() => { setEditingServer(null); setShowServerForm(true) }}><Plus size={16} />添加服务器</button>
-          <button onClick={importConfig} disabled={importingConfig}><Download size={16} />{importingConfig ? '正在读取 SSH Config…' : '导入 SSH Config'}</button>
+          {!hub && <><button onClick={() => { setEditingServer(null); setShowServerForm(true) }}><Plus size={16} />添加服务器</button>
+          <button onClick={importConfig} disabled={importingConfig}><Download size={16} />{importingConfig ? '正在读取 SSH Config…' : '导入 SSH Config'}</button></>}
           <button onClick={() => setShowActivityLog(true)}><ScrollText size={16} />日志</button>
           <button onClick={() => setShowSettings(true)}><Settings size={16} />设置</button>
         </div>
@@ -1708,9 +1710,9 @@ function App() {
 
         <div className="workspace__scroll">
           {shouldShowGuidedEmptyState(mainView, servers.length) ? (
-            <EmptyState onboarding={<OnboardingChecklist steps={onboardingSteps} previewStep={onboardingPreviewStep} collapsed={onboardingCollapsed} dismissed={onboardingDismissed} useActualState={onboardingUseActualState} showPreviewControls={!api.isDesktop} onPreviewStepChange={setOnboardingPreviewStep} onCollapsedChange={setOnboardingCollapsed} onDismiss={() => { localStorage.setItem(ONBOARDING_DISMISSED_KEY, 'true'); setOnboardingDismissed(true); setToast('已隐藏新手引导，可在“设置 → 通用”中重新显示') }} onUseActualStateChange={setOnboardingUseActualState} />} onAdd={() => { setEditingServer(null); setShowServerForm(true) }} onImport={importConfig} />
+            <EmptyState onboarding={<OnboardingChecklist steps={onboardingSteps} previewStep={onboardingPreviewStep} collapsed={onboardingCollapsed} dismissed={onboardingDismissed} useActualState={onboardingUseActualState} showPreviewControls={!api.isDesktop} onPreviewStepChange={setOnboardingPreviewStep} onCollapsedChange={setOnboardingCollapsed} onDismiss={() => { localStorage.setItem(ONBOARDING_DISMISSED_KEY, 'true'); setOnboardingDismissed(true); setToast('已隐藏新手引导，可在“设置 → 通用”中重新显示') }} onUseActualStateChange={setOnboardingUseActualState} />} showConnectionActions={!hub} onAdd={() => { setEditingServer(null); setShowServerForm(true) }} onImport={importConfig} />
           ) : servers.length === 0 ? (
-            <EmptyState onAdd={() => { setEditingServer(null); setShowServerForm(true) }} onImport={importConfig} />
+            <EmptyState showConnectionActions={!hub} onAdd={() => { setEditingServer(null); setShowServerForm(true) }} onImport={importConfig} />
           ) : mainView === 'hub-admin' && hub?.user.role === 'admin' ? (
             <HubAdminPage onRegister={() => setShowHubNodeRegistration(true)} />
           ) : mainView === 'hub-reservations' ? (
@@ -1730,6 +1732,8 @@ function App() {
               points={history[selectedServer.id] ?? []}
               settings={settings}
               tab={selectedTab}
+              hubMode={Boolean(hub)}
+              hubAdmin={hub?.user.role === 'admin'}
               selectedGpuUuid={selectedGpuUuid}
               onTab={(tab) => { setSelectedTab(tab); if (tab !== 'gpu') setSelectedGpuUuid(null) }}
               onSelectGpu={(gpuUuid) => { setSelectedGpuUuid(gpuUuid); setSelectedTab('gpu') }}
@@ -1785,15 +1789,15 @@ function App() {
   )
 }
 
-export function EmptyState({ onboarding, onAdd, onImport }: { onboarding?: React.ReactNode; onAdd: () => void; onImport: () => void }) {
+export function EmptyState({ onboarding, onAdd, onImport, showConnectionActions = true }: { onboarding?: React.ReactNode; onAdd: () => void; onImport: () => void; showConnectionActions?: boolean }) {
   return (
     <div className={`empty-fleet${onboarding ? ' empty-fleet--guided' : ''}`}>
       {onboarding}
       <div className="empty-state">
         <span className="empty-state__icon"><ServerIcon size={28} /></span>
         <h2>连接第一台服务器</h2>
-        <p>添加 SSH 主机或导入现有 OpenSSH Config，GPUDeck 会自动采集 GPU / NPU / PPU、CPU、内存和进程指标。</p>
-        <div><button className="button button--primary" onClick={onAdd}><Plus size={17} />添加服务器</button><button className="button button--secondary" onClick={onImport}><Download size={17} />导入配置</button></div>
+        <p>{showConnectionActions ? '添加 SSH 主机或导入现有 OpenSSH Config，GPUDeck 会自动采集 GPU / NPU / PPU、CPU、内存和进程指标。' : '请联系管理员在管理面板注册服务器节点，节点 Agent 上线后会自动显示在这里。'}</p>
+        {showConnectionActions && <div><button className="button button--primary" onClick={onAdd}><Plus size={17} />添加服务器</button><button className="button button--secondary" onClick={onImport}><Download size={17} />导入配置</button></div>}
       </div>
     </div>
   )
@@ -1818,6 +1822,8 @@ interface ServerDetailProps {
   points: HistoryPoint[]
   settings: AppSettings | null
   tab: DetailTab
+  hubMode: boolean
+  hubAdmin: boolean
   selectedGpuUuid: string | null
   onTab: (tab: DetailTab) => void
   onSelectGpu: (gpuUuid: string) => void
@@ -1840,7 +1846,7 @@ interface ServerDetailProps {
   onNotificationMenuRequestHandled: () => void
 }
 
-function ServerDetail({ server, snapshot, points, settings, tab, selectedGpuUuid, onTab, onSelectGpu, onRefresh, onDelete, onEdit, onRequestTerminate, terminatingPid, nvidiaWarningIgnored, onIgnoreNvidiaWarning, onRestoreNvidiaWarning, isRefreshing, animateCharts, gpuMemoryWarnings, ignoredGpuMemoryStallWarningIds, onRestoreGpuMemoryStallWarning, notificationSettings, onNotificationSettingsChange, notificationMenuRequested, onNotificationMenuRequestHandled }: ServerDetailProps) {
+function ServerDetail({ server, snapshot, points, settings, tab, hubMode, hubAdmin, selectedGpuUuid, onTab, onSelectGpu, onRefresh, onDelete, onEdit, onRequestTerminate, terminatingPid, nvidiaWarningIgnored, onIgnoreNvidiaWarning, onRestoreNvidiaWarning, isRefreshing, animateCharts, gpuMemoryWarnings, ignoredGpuMemoryStallWarningIds, onRestoreGpuMemoryStallWarning, notificationSettings, onNotificationSettingsChange, notificationMenuRequested, onNotificationMenuRequestHandled }: ServerDetailProps) {
   const [showLogs, setShowLogs] = useState(false)
   const [historyContentReady, setHistoryContentReady] = useState(false)
   const isReconnecting = isRefreshing || server.status === 'connecting'
@@ -1852,29 +1858,32 @@ function ServerDetail({ server, snapshot, points, settings, tab, selectedGpuUuid
     }
     return afterNextPaint(() => setHistoryContentReady(true))
   }, [server.id, tab])
+  const visibleTabs = tabs.filter((item) => canViewDetailTab(item.value, hubMode, hubAdmin))
+  const activeTab = visibleTabs.some((item) => item.value === tab) ? tab : 'overview'
   const selectTab = (nextTab: DetailTab) => {
+    if (!canViewDetailTab(nextTab, hubMode, hubAdmin)) return
     if (nextTab === 'history') setHistoryContentReady(false)
     onTab(nextTab)
   }
   return (
-    <div className={`detail-page ${tab === 'terminal' ? 'detail-page--terminal' : ''}`}>
+    <div className={`detail-page ${activeTab === 'terminal' ? 'detail-page--terminal' : ''}`}>
       <div className="server-identity">
         <div className="server-identity__summary"><StatusPill status={server.status} /><span className="server-identity__meta">{server.location ? `${server.location} · ` : ''}{snapshot.username}@{snapshot.hostname} · 端口 {server.port}</span>{isShowingCachedSnapshot && <span className="server-cache-state" role="status" aria-live="polite" title={server.status === 'offline' ? server.lastError ?? undefined : undefined}>{isReconnecting ? <LoaderCircle className="spin" size={13} /> : <Clock3 size={13} />}<span>{isReconnecting ? '更新中，显示上次采样' : `显示 ${relativeTime(snapshot.timestamp)}的采样`}</span></span>}</div>
         <div className="server-identity__actions"><button className="icon-button" aria-label="打开采集与连接日志" title="日志" onClick={() => setShowLogs((value) => !value)}><ScrollText size={17} /></button><button className="icon-button" aria-label="刷新当前服务器" title="刷新当前服务器" onClick={onRefresh} disabled={isRefreshing}><RefreshCw size={17} className={isRefreshing ? 'spin' : ''} /></button><button className="icon-button" aria-label="编辑服务器" title="编辑服务器" onClick={onEdit}><MoreHorizontal size={18} /></button></div>
       </div>
       {showLogs && <div className="floating-log-panel"><LogsView server={server} snapshot={snapshot} /><button className="icon-button floating-log-panel__close" onClick={() => setShowLogs(false)} aria-label="关闭日志"><X size={15} /></button></div>}
       <div className="detail-tabs" role="tablist">
-        {tabs.map((item) => <button key={item.value} role="tab" aria-selected={tab === item.value} className={tab === item.value ? 'is-active' : ''} onClick={() => selectTab(item.value)}>{item.value === 'gpu' ? acceleratorLabel(snapshot) : item.label}</button>)}
+        {visibleTabs.map((item) => <button key={item.value} role="tab" aria-selected={activeTab === item.value} className={activeTab === item.value ? 'is-active' : ''} onClick={() => selectTab(item.value)}>{item.value === 'gpu' ? acceleratorLabel(snapshot) : item.label}</button>)}
       </div>
       <div className="detail-content">
         {(snapshot.acceleratorVendor ?? 'nvidia') === 'nvidia' && snapshot.nvidiaSmi !== 'available' && !nvidiaWarningIgnored && <NvidiaWarning snapshot={snapshot} onRefresh={onRefresh} onIgnore={onIgnoreNvidiaWarning} />}
-        {tab === 'overview' && <ServerOverview snapshot={snapshot} points={points} idleThreshold={settings?.idleGpuThreshold ?? 10} onSelectGpu={onSelectGpu} onOpenCpu={() => selectTab('cpu')} onRequestTerminate={onRequestTerminate} terminatingPid={terminatingPid} animateCharts={animateCharts} gpuMemoryWarnings={gpuMemoryWarnings} isRefreshing={isRefreshing} />}
-        {tab === 'gpu' && <GpuDetail snapshot={snapshot} points={points} selectedGpuUuid={selectedGpuUuid} onSelectGpu={onSelectGpu} animateChart={animateCharts} />}
-        {tab === 'cpu' && <CpuDetail snapshot={snapshot} points={points} animateChart={animateCharts} />}
-        {tab === 'processes' && <ProcessBlocks snapshot={snapshot} terminatingPid={terminatingPid} onRequestTerminate={onRequestTerminate} loading={isRefreshing} />}
-        {tab === 'terminal' && <SshTerminal serverId={server.id} serverName={server.name} />}
-        {tab === 'history' && (historyContentReady ? <HistoryView server={server} snapshot={snapshot} /> : <div className="history-page-loading" role="status" aria-live="polite"><LoaderCircle className="spin" size={18} /><span>正在加载趋势…</span></div>)}
-        {tab === 'connection' && <ConnectionView server={server} snapshot={snapshot} nvidiaWarningIgnored={nvidiaWarningIgnored} ignoredGpuMemoryStallWarningIds={ignoredGpuMemoryStallWarningIds} onRestoreNvidiaWarning={onRestoreNvidiaWarning} onRestoreGpuMemoryStallWarning={onRestoreGpuMemoryStallWarning} onRefresh={onRefresh} onDelete={onDelete} onEdit={onEdit} isRefreshing={isRefreshing} notificationSettings={notificationSettings} onNotificationSettingsChange={onNotificationSettingsChange} notificationMenuRequested={notificationMenuRequested} onNotificationMenuRequestHandled={onNotificationMenuRequestHandled} />}
+        {activeTab === 'overview' && <ServerOverview snapshot={snapshot} points={points} idleThreshold={settings?.idleGpuThreshold ?? 10} onSelectGpu={onSelectGpu} onOpenCpu={() => selectTab('cpu')} onRequestTerminate={onRequestTerminate} terminatingPid={terminatingPid} animateCharts={animateCharts} gpuMemoryWarnings={gpuMemoryWarnings} isRefreshing={isRefreshing} />}
+        {activeTab === 'gpu' && <GpuDetail snapshot={snapshot} points={points} selectedGpuUuid={selectedGpuUuid} onSelectGpu={onSelectGpu} animateChart={animateCharts} />}
+        {activeTab === 'cpu' && <CpuDetail snapshot={snapshot} points={points} animateChart={animateCharts} />}
+        {activeTab === 'processes' && <ProcessBlocks snapshot={snapshot} terminatingPid={terminatingPid} onRequestTerminate={onRequestTerminate} loading={isRefreshing} />}
+        {activeTab === 'terminal' && <SshTerminal serverId={server.id} serverName={server.name} />}
+        {activeTab === 'history' && (historyContentReady ? <HistoryView server={server} snapshot={snapshot} /> : <div className="history-page-loading" role="status" aria-live="polite"><LoaderCircle className="spin" size={18} /><span>正在加载趋势…</span></div>)}
+        {activeTab === 'connection' && <ConnectionView server={server} snapshot={snapshot} nvidiaWarningIgnored={nvidiaWarningIgnored} ignoredGpuMemoryStallWarningIds={ignoredGpuMemoryStallWarningIds} onRestoreNvidiaWarning={onRestoreNvidiaWarning} onRestoreGpuMemoryStallWarning={onRestoreGpuMemoryStallWarning} onRefresh={onRefresh} onDelete={onDelete} onEdit={onEdit} isRefreshing={isRefreshing} notificationSettings={notificationSettings} onNotificationSettingsChange={onNotificationSettingsChange} notificationMenuRequested={notificationMenuRequested} onNotificationMenuRequestHandled={onNotificationMenuRequestHandled} />}
       </div>
     </div>
   )
