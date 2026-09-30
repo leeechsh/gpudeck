@@ -1672,12 +1672,10 @@ function App() {
           {visibleServers.length === 0 && <p className="empty-copy">暂无服务器</p>}
         </div>
         {hub && <GpuOccupancyPanel snapshots={snapshots} />}
-        <div className="sidebar__footer">
-          {!hub && <><button onClick={() => { setEditingServer(null); setShowServerForm(true) }}><Plus size={16} />添加服务器</button>
-          <button onClick={importConfig} disabled={importingConfig}><Download size={16} />{importingConfig ? '正在读取 SSH Config…' : '导入 SSH Config'}</button></>}
-          <button onClick={() => setShowActivityLog(true)}><ScrollText size={16} />日志</button>
-          <button onClick={() => setShowSettings(true)}><Settings size={16} />设置</button>
-        </div>
+        {!hub && <div className="sidebar__footer">
+          <button onClick={() => { setEditingServer(null); setShowServerForm(true) }}><Plus size={16} />添加服务器</button>
+          <button onClick={importConfig} disabled={importingConfig}><Download size={16} />{importingConfig ? '正在读取 SSH Config…' : '导入 SSH Config'}</button>
+        </div>}
       </aside>
 
       <main className="workspace">
@@ -1700,6 +1698,8 @@ function App() {
             {hub && <button className="button button--primary" onClick={() => setShowHubReservation(true)}><Plus size={15}/>预约 GPU</button>}
             <HubAccount />
             <button className="icon-button" aria-label="预约与通知" onClick={() => setShowReservationCenter(true)}><Bell size={18} />{(totals.hot > 0 || activeIdleReservationCount > 0 || gpuMemoryStallWarnings.length > 0 || mineProcessWarnings.length > 0) && <span className="notification-dot" />}</button>
+            <button className="icon-button" aria-label="日志" title="日志" onClick={() => setShowActivityLog(true)}><ScrollText size={17} /></button>
+            <button className="icon-button" aria-label="设置" title="设置" onClick={() => setShowSettings(true)}><Settings size={17} /></button>
             <WindowsWindowControls />
           </div>
         </header>

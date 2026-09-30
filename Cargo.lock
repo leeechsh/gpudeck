@@ -1254,7 +1254,7 @@ checksum = "f8dcc9c7d52a811697d2151c701e0d08956f92b0e24136cf4cf27b57a6a0d9bf"
 
 [[package]]
 name = "gpudeck-agent"
-version = "2.2.1"
+version = "2.2.2"
 dependencies = [
  "anyhow",
  "chrono",
@@ -1269,7 +1269,7 @@ dependencies = [
 
 [[package]]
 name = "gpudeck-domain"
-version = "2.2.1"
+version = "2.2.2"
 dependencies = [
  "chrono",
  "serde",
@@ -1279,7 +1279,7 @@ dependencies = [
 
 [[package]]
 name = "gpudeck-hub"
-version = "2.2.1"
+version = "2.2.2"
 dependencies = [
  "anyhow",
  "argon2",
