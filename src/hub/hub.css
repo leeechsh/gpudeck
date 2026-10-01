@@ -51,3 +51,4 @@
 .hub-global-settings__controls { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; }
 .hub-global-settings__controls input { width: 90px; padding: 9px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: inherit; }
 .hub-global-settings p { margin: 0; color: var(--text-secondary); font-size: 13px; line-height: 1.6; }
+.reservation-datetime{min-width:0;display:grid;gap:6px}.reservation-clock{display:flex;align-items:center;gap:6px}.hub-create-sheet .reservation-clock select{min-width:0;padding:8px 9px;border:1px solid var(--border-strong);border-radius:7px;color:var(--text);background:var(--surface-solid);font:inherit}.hub-create-sheet .reservation-clock select:focus-visible{outline:2px solid var(--blue);outline-offset:2px}.reservation-clock small,.reservation-time-help{color:var(--text-tertiary);font-size:10px}

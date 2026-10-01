@@ -1,11 +1,13 @@
 import type { Node, Reservation, User } from './api'
+import { reservationWindowStart } from './reservationTime'
 
 export const overlaps = (start: number, end: number, otherStart: number, otherEnd: number) => start < otherEnd && otherStart < end
 export function reservationChecks(gpuIds: string[], startsAt: string, endsAt: string, reservations: Reservation[], nodes: Node[], user: User, now = Date.now()) {
   const start = new Date(startsAt).getTime(), end = new Date(endsAt).getTime()
   const errors: string[] = []
   if (!Number.isFinite(start + end) || end <= start) return { errors: ['结束时间必须晚于开始时间'], warnings: [] as string[] }
-  if (start < now - 5 * 60000 || start > now + 14 * 86400000) errors.push('开始时间必须在未来 14 天内')
+  if (start < reservationWindowStart(now) || start > now + 14 * 86400000) errors.push('开始时间必须在当前半小时窗口或未来 14 天内')
+  if (end <= now) errors.push('结束时间必须晚于当前时间')
   if (end - start > 48 * 3600000) errors.push('每次预约最长 48 小时')
   if (!gpuIds.length) errors.push('请至少选择一张 GPU')
   const active = reservations.filter(item => !['cancelled','completed'].includes(item.status) && overlaps(start,end,new Date(item.startsAt).getTime(),new Date(item.endsAt).getTime()))

@@ -50,4 +50,10 @@ sudo journalctl -u gpudeck-hub -n 100 --no-pager
 
 启动失败的自动回退仅发生在切换尚未开始接收新写入时。若切换成功后再手动回退，必须先停 systemd，备份最新 SQLite 并将其恢复到 Docker 数据卷，避免丢失切换后的预约/账号变更；不能直接启动旧数据库。保留原 Docker 容器和卷，不执行 `docker compose down -v`。
 
-后续升级：备份数据库，停止 `gpudeck-hub`，替换 `/usr/local/bin/gpudeck-hub`，再启动服务；不要重复运行一次性迁移脚本。不要直接复制正在写入的 SQLite 主文件，应使用 SQLite `.backup` 或停写后完整备份。
+后续当前服务器升级：先构建，再执行下列命令；不要重复运行一次性迁移脚本。
+
+```bash
+sudo /home/leeechsh/Workspace/gpudeck/deploy/upgrade-current-hub-root.sh
+```
+
+升级脚本停服务后备份数据库及剩余 WAL/SHM、原程序与配置到 `/var/lib/gpudeck/backups/upgrade-时间戳/`，替换程序并健康检查，失败恢复原程序。不会覆盖数据库或更改配置。本次 2.8.0 没有数据库结构变更；涉及不兼容结构变更的未来升级须另行设计数据恢复，不能仅回退程序。不要直接复制正在写入的 SQLite 主文件，应使用 SQLite `.backup` 或停写后完整备份。

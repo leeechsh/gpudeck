@@ -19,7 +19,7 @@ jobs:
       - run: bash deploy/build-standalone.sh
       - run: cargo test --locked --workspace
       - run: cargo fmt --all --check
-      - run: bash -n deploy/build-standalone.sh deploy/install-current-hub-root.sh
+      - run: bash -n deploy/build-standalone.sh deploy/install-current-hub-root.sh deploy/upgrade-current-hub-root.sh
       - uses: actions/upload-artifact@v4
         with:
           name: gpudeck-hub-linux-x86_64

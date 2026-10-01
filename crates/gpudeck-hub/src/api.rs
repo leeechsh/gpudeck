@@ -771,6 +771,14 @@ fn peak_allocations(
 }
 
 fn validate_reservation(input: &CreateReservation, limit: i32) -> Result<(), ApiError> {
+    validate_reservation_at(input, limit, Utc::now())
+}
+
+fn validate_reservation_at(
+    input: &CreateReservation,
+    limit: i32,
+    now: DateTime<Utc>,
+) -> Result<(), ApiError> {
     if input.gpu_ids.is_empty() || input.gpu_ids.len() > limit as usize {
         return Err(ApiError(
             StatusCode::UNPROCESSABLE_ENTITY,
@@ -783,11 +791,18 @@ fn validate_reservation(input: &CreateReservation, limit: i32) -> Result<(), Api
             "GPU 不可重复".into(),
         ));
     }
-    let now = Utc::now();
-    if input.starts_at < now - Duration::minutes(5) || input.starts_at > now + Duration::days(14) {
+    let window_start =
+        DateTime::from_timestamp(now.timestamp().div_euclid(1800) * 1800, 0).unwrap();
+    if input.starts_at < window_start || input.starts_at > now + Duration::days(14) {
         return Err(ApiError(
             StatusCode::UNPROCESSABLE_ENTITY,
-            "开始时间必须在未来14天内".into(),
+            "开始时间必须在当前半小时窗口或未来14天内".into(),
+        ));
+    }
+    if input.ends_at <= now {
+        return Err(ApiError(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "结束时间必须晚于当前时间".into(),
         ));
     }
     if input.ends_at <= input.starts_at || input.ends_at - input.starts_at > Duration::hours(48) {
@@ -858,6 +873,26 @@ fn bearer(headers: &HeaderMap) -> Option<&str> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn accepts_current_window_and_rejects_elapsed_or_previous_window() {
+        let now: DateTime<Utc> = "2026-10-01T07:47:00Z".parse().unwrap();
+        let mut input = reservation(Duration::hours(1));
+        input.starts_at = "2026-10-01T07:30:00Z".parse().unwrap();
+        input.ends_at = "2026-10-01T08:30:00Z".parse().unwrap();
+        assert!(validate_reservation_at(&input, 2, now).is_ok());
+        input.starts_at -= Duration::seconds(1);
+        assert!(validate_reservation_at(&input, 2, now).is_err());
+        input.starts_at += Duration::seconds(1);
+        input.ends_at = now;
+        assert!(validate_reservation_at(&input, 2, now).is_err());
+        input.ends_at = now + Duration::hours(1);
+        assert!(
+            validate_reservation_at(&input, 2, "2026-10-01T08:00:00Z".parse().unwrap()).is_err()
+        );
+        input.starts_at = "2026-10-01T08:00:00Z".parse().unwrap();
+        assert!(validate_reservation_at(&input, 2, input.starts_at).is_ok());
+    }
 
     #[test]
     fn counts_peak_not_union_and_allows_touching_boundaries() {

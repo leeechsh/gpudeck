@@ -3,6 +3,7 @@ import { ChevronLeft, ChevronRight, Plus, RefreshCw, X } from 'lucide-react'
 import { HubReservationSheet, ReservationRow, useHub } from './HubFeatures'
 import type { Reservation } from './api'
 import { reservationChecks } from './reservationChecks'
+import { reservationWindowStart } from './reservationTime'
 import type { PointerEvent as ReactPointerEvent } from 'react'
 
 export type ReservationSeed = { gpuIds: string[]; startsAt: string; endsAt: string }
@@ -70,7 +71,7 @@ export function ReservationTimeline({ onCreate }: { onCreate: () => void }) {
     if (!cell || cell.disabled || event.button !== 0 || dragRef.current) return
     const track = cell.closest<HTMLElement>('.timeline-track')!, row=cell.closest<HTMLElement>('.timeline-row')!
     const rect=track.getBoundingClientRect()
-    const anchorTime = start + Math.floor((event.clientX-rect.left)/rect.width*(end-start)/1800000)*1800000
+    const anchorTime = Math.max(reservationWindowStart(), start + Math.floor((event.clientX-rect.left)/rect.width*(end-start)/1800000)*1800000)
     const first={gpuIds:[row.dataset.gpuId!],startsAt:dateInput(new Date(anchorTime)),endsAt:dateInput(new Date(anchorTime+1800000))}
     dragRef.current={pointerId:event.pointerId,anchorTime,anchorGpu:row.dataset.gpuId!,x:event.clientX,y:event.clientY,moved:false,seed:first}
     event.currentTarget.setPointerCapture(event.pointerId)
@@ -123,10 +124,10 @@ export function ReservationTimeline({ onCreate }: { onCreate: () => void }) {
             <div className="timeline-slots">{Array.from({length:slots},(_,index) => {
               const slotStart=start+index*slotMs, slotEnd=slotStart+slotMs
               const occupied=hub.reservations.some(item => !['cancelled','completed'].includes(item.status) && item.gpuIds.includes(gpu.id) && new Date(item.startsAt).getTime()<slotEnd && new Date(item.endsAt).getTime()>slotStart)
-              const disabled=slotEnd<=Math.ceil(now/1800000)*1800000 || occupied || gpu.maintenance || gpu.missing || !online(node.lastSeenAt)
+              const disabled=slotEnd<=reservationWindowStart(now) || occupied || gpu.maintenance || gpu.missing || !online(node.lastSeenAt)
               return <button key={index} disabled={disabled} aria-label={`预约 ${node.name} GPU ${gpu.index} ${new Date(slotStart).toLocaleString('zh-CN')}`} onClick={event => {
                 if(event.detail>0 && Date.now()<ignoreClickUntil.current) return
-                const startsAt=Math.max(slotStart, Math.ceil(Date.now()/1800000)*1800000)
+                const startsAt=Math.max(slotStart, reservationWindowStart())
                 setSeed({gpuIds:[gpu.id],startsAt:dateInput(new Date(startsAt)),endsAt:dateInput(new Date(Math.min(startsAt+3600000,slotEnd > startsAt ? slotEnd : startsAt+1800000)))})
               }}/>
             })}</div>

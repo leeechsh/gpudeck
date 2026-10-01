@@ -4,6 +4,8 @@ import { AdminNode, AdminUser, HubApiError, hubApi, Node, NodeRegistration, Rese
 import { ReservationTimeline, type ReservationSeed } from './ReservationTimeline'
 import { reservationChecks } from './reservationChecks'
 import { GlobalReservationSettings } from './GlobalReservationSettings'
+import { ReservationDateTime } from './ReservationDateTime'
+import { reservationWindowStart } from './reservationTime'
 
 type HubState = {
   user: User
@@ -52,13 +54,13 @@ export function ReservationRow({ reservation }: { reservation: Reservation }) {
   return <div className="reservation-row"><span className={`reservation-row__status reservation-row__status--${reservation.status === 'active' ? 'active' : reservation.status === 'completed' ? 'completed' : ''}`}><Clock3 size={15}/></span><span className="reservation-row__content"><div><strong>{reservation.projectName}</strong><em>{statusLabel[reservation.status] ?? reservation.status}</em></div><p>{reservation.ownerName} · {reservation.gpuIds.length} 张 GPU · {reservation.purpose}</p><small>{new Date(reservation.startsAt).toLocaleString('zh-CN')} — {new Date(reservation.endsAt).toLocaleString('zh-CN')}</small></span><span className="reservation-row__actions" aria-busy={busy}>{reservation.ownerId === hub.user.id && reservation.status === 'scheduled' && <button className="button button--secondary button--small" disabled={busy} onClick={() => void action('check-in')}>签到</button>}{reservation.ownerId === hub.user.id && reservation.status === 'active' && <button className="button button--secondary button--small" disabled={busy} onClick={() => void action('end')}>结束</button>}{allowed && reservation.status === 'scheduled' && <button className="icon-button reservation-delete" disabled={busy} onClick={() => void action('cancel')} aria-label="取消预约"><X size={14}/></button>}</span>{error && <span role="alert" className="hub-form-error">{error}</span>}</div>
 }
 
-const localDate = (hours: number) => { const d = new Date(Date.now() + hours * 3600000); d.setMinutes(Math.ceil(d.getMinutes() / 30) * 30, 0, 0); return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16) }
+const localDate = (hours: number) => { const d = new Date(reservationWindowStart() + hours * 3600000); return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16) }
 
 export function HubReservationSheet({ onClose, initial }: { onClose: () => void; initial?: ReservationSeed }) {
   const hub = useHub()!
   const [selected, setSelected] = useState<string[]>(initial?.gpuIds ?? [])
-  const [startsAt, setStartsAt] = useState(initial?.startsAt ?? localDate(1))
-  const [endsAt, setEndsAt] = useState(initial?.endsAt ?? localDate(5))
+  const [startsAt, setStartsAt] = useState(initial?.startsAt ?? localDate(0))
+  const [endsAt, setEndsAt] = useState(initial?.endsAt ?? localDate(4))
   const [error, setError] = useState(''), [busy, setBusy] = useState(false)
   const gpus = hub.nodes.flatMap(node => node.gpus.map(gpu => ({ ...gpu, nodeName: node.name })))
   const checks = reservationChecks(selected, startsAt, endsAt, hub.reservations, hub.nodes, hub.user)
@@ -85,7 +87,8 @@ export function HubReservationSheet({ onClose, initial }: { onClose: () => void;
     <div className="reservation-body">
       <div className="reservation-condition"><span><CalendarDays size={16}/></span><div><strong>提交后自动确认</strong><small>时间边界相接不算冲突；每次最长 48 小时，未来 14 天内开始。</small></div></div>
       <label>项目名称<input name="projectName" required maxLength={120} placeholder="例如：RadarDreamer 训练" disabled={busy}/></label>
-      <div className="hub-form-grid"><label>开始时间<input name="startsAt" type="datetime-local" value={startsAt} onChange={event => {setStartsAt(event.target.value);setError('')}} required disabled={busy}/></label><label>结束时间<input name="endsAt" type="datetime-local" value={endsAt} onChange={event => {setEndsAt(event.target.value);setError('')}} required disabled={busy}/></label></div>
+      <div className="hub-form-grid"><ReservationDateTime label="开始时间" name="startsAt" value={startsAt} onChange={value => {setStartsAt(value);setError('')}} disabled={busy}/><ReservationDateTime label="结束时间" name="endsAt" value={endsAt} onChange={value => {setEndsAt(value);setError('')}} disabled={busy}/></div>
+      <small className="reservation-time-help">可从当前半小时窗口开始；时间使用本地时区的 24 小时制。</small>
       <fieldset><legend>选择 GPU</legend><div className="hub-gpu-picker">{gpus.map(gpu => {
         const conflicts = reservationChecks([gpu.id], startsAt, endsAt, hub.reservations, hub.nodes, {...hub.user,concurrentGpuLimit:14}).errors.filter(message => message.includes('冲突'))
         return <button type="button" disabled={busy || gpu.maintenance || gpu.missing} aria-pressed={selected.includes(gpu.id)} className={`${selected.includes(gpu.id) ? 'is-selected' : ''} ${conflicts.length ? 'has-conflict' : ''}`} key={gpu.id} onClick={() => {setSelected(current => current.includes(gpu.id) ? current.filter(id => id !== gpu.id) : [...current,gpu.id]);setError('')}}><span>{selected.includes(gpu.id) && <Check size={13}/>}</span><div><strong>{gpu.nodeName} · GPU {gpu.index}</strong><small>{gpu.name}{conflicts.length ? ' · 时段冲突' : ''}</small></div></button>

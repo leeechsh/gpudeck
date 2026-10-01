@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { HubProvider, HubReservationSheet } from './HubFeatures'
 import { HubApiError, hubApi, type Reservation, type User } from './api'
 import { ReservationTimeline, dateInput, reservationPosition } from './ReservationTimeline'
+import { reservationWindowStart } from './reservationTime'
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 vi.mock('./api', async () => ({...await vi.importActual('./api'),hubApi: { me: vi.fn(), resources: vi.fn(), reservations: vi.fn(), action: vi.fn(), createReservation: vi.fn() }}))
@@ -14,6 +15,22 @@ beforeEach(() => vi.mocked(hubApi.me).mockResolvedValue(user))
 const today = new Date(); today.setHours(0,0,0,0)
 const booking = {id:'booking',ownerId:'bob',ownerName:'Bob',projectName:'Train',purpose:'Training',gpuIds:['g0','g1'],startsAt:new Date(today.getTime()+3600000).toISOString(),endsAt:new Date(today.getTime()+7200000).toISOString(),status:'scheduled'} as Reservation
 describe('reservation timeline', () => {
+  it('enables and prefills the current window instead of skipping to the next one', async () => {
+    const clock=vi.spyOn(Date,'now').mockReturnValue(today.getTime()+15*3600000+47*60000)
+    const current=reservationWindowStart(Date.now())
+    vi.mocked(hubApi.resources).mockResolvedValue({serverTime:new Date(Date.now()).toISOString(),nodes:[{id:'node',name:'Lab',hostname:'lab',lastSeenAt:new Date(Date.now()).toISOString(),gpus:[{id:'g0',uuid:'uuid0',index:0,name:'L40S',memoryTotalMb:46080,processes:[],maintenance:false,missing:false}]}]})
+    vi.mocked(hubApi.reservations).mockResolvedValue([])
+    const host=document.createElement('div'),root=createRoot(host)
+    try {
+      await act(async()=>root.render(<HubProvider user={user} onLogout={()=>{}}><ReservationTimeline onCreate={()=>{}}/></HubProvider>))
+      const first=host.querySelector('.timeline-slots button:not(:disabled)') as HTMLButtonElement
+      expect(Array.from(host.querySelectorAll('.timeline-slots button')).indexOf(first)).toBe(31)
+      await act(async()=>first.click())
+      expect((host.querySelector('input[name="startsAt"]') as HTMLInputElement).value).toBe(dateInput(new Date(current)))
+      expect(host.querySelector('input[type="datetime-local"]')).toBeNull()
+      expect(host.textContent).not.toContain('开始时间必须在')
+    } finally {await act(async()=>root.unmount());clock.mockRestore()}
+  })
   it('does not retry creation when only the post-success refresh fails', async () => {
     const startsAt=dateInput(new Date(Date.now()+3600000)),endsAt=dateInput(new Date(Date.now()+7200000))
     vi.mocked(hubApi.resources).mockResolvedValueOnce({serverTime:new Date().toISOString(),nodes:[{id:'node',name:'Lab',hostname:'lab',lastSeenAt:new Date().toISOString(),gpus:[{id:'g0',uuid:'uuid0',index:0,name:'L40S',memoryTotalMb:46080,processes:[],maintenance:false,missing:false}]}]}).mockRejectedValueOnce(new Error('Refresh failed'))

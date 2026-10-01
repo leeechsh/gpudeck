@@ -41,7 +41,7 @@ GPUDeck 将分散在多台 Linux 服务器上的 GPU 状态、预约日历、团
 
 ## 下载
 
-当前开发版：**v2.7.1**。支持 [单可执行文件 / systemd 部署](docs/STANDALONE.md) 和 [Docker 部署](docs/DEPLOYMENT.md)；桌面安装包将在 [GitHub Releases](https://github.com/leeechsh/gpudeck/releases) 发布。
+当前开发版：**v2.8.0**。支持 [单可执行文件 / systemd 部署](docs/STANDALONE.md) 和 [Docker 部署](docs/DEPLOYMENT.md)；桌面安装包将在 [GitHub Releases](https://github.com/leeechsh/gpudeck/releases) 发布。
 
 ## 作者的话
 
