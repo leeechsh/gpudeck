@@ -1,5 +1,7 @@
 # GPUDeck Hub — 协作式 GPU 预约
 
+推荐非 Docker 部署：参见 [单可执行文件 / systemd 部署与迁移](STANDALONE.md)。下文保留 Docker 方式供回退与可选部署。
+
 这是基于 GPUDeck 的无 Slurm 团队版：中央看板、具体 GPU 预约、门户账号、企业微信通知和使用统计。Hub 与 Agent **不会执行、暂停或终止用户进程**；SSH 仍可绕过预约，因此违规使用只会被标记和通知。
 
 ## 架构

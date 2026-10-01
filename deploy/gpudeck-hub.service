@@ -1,0 +1,25 @@
+[Unit]
+Description=GPUDeck Hub (embedded Web and SQLite)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=gpudeck
+Group=gpudeck
+EnvironmentFile=/etc/gpudeck/hub.env
+WorkingDirectory=/var/lib/gpudeck
+ExecStart=/usr/local/bin/gpudeck-hub
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=30
+UMask=0077
+StateDirectory=gpudeck
+StateDirectoryMode=0700
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/gpudeck
+
+[Install]
+WantedBy=multi-user.target

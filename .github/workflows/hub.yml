@@ -1,0 +1,26 @@
+name: Standalone Hub
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+jobs:
+  linux:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+      - run: npm ci
+      - run: npm test
+      - run: bash deploy/build-standalone.sh
+      - run: cargo test --locked --workspace
+      - run: cargo fmt --all --check
+      - run: bash -n deploy/build-standalone.sh deploy/install-current-hub-root.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: gpudeck-hub-linux-x86_64
+          path: target/release/gpudeck-hub

@@ -1,7 +1,17 @@
+FROM node:22-bookworm AS web
+WORKDIR /web
+COPY package*.json ./
+RUN npm ci
+COPY index.html tsconfig*.json vite.config.ts ./
+COPY public ./public
+COPY src ./src
+RUN npm run build
+
 FROM rust:1.98-bookworm AS build
 WORKDIR /src
 COPY Cargo.toml Cargo.lock ./
 COPY crates ./crates
+COPY --from=web /web/dist ./dist
 RUN cargo build --locked --release -p gpudeck-hub
 
 FROM debian:bookworm-slim

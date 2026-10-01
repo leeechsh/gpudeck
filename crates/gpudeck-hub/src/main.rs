@@ -3,6 +3,7 @@ mod auth;
 mod db;
 #[cfg(test)]
 mod storage_tests;
+mod web;
 mod worker;
 
 use anyhow::Context;
@@ -22,6 +23,10 @@ pub struct AppState {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    if env::args().any(|arg| arg == "--version") {
+        println!("gpudeck-hub {}", env!("CARGO_PKG_VERSION"));
+        return Ok(());
+    }
     tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env()
@@ -52,14 +57,28 @@ async fn main() -> anyhow::Result<()> {
     let app = Router::new()
         .route("/healthz", get(|| async { "ok" }))
         .nest("/api/v1", api::router())
+        .fallback(web::serve)
         .layer(TraceLayer::new_for_http())
-        .with_state(state);
+        .with_state(state.clone());
 
     let address: SocketAddr = env::var("GPUDECK_LISTEN")
         .unwrap_or_else(|_| "0.0.0.0:8080".into())
         .parse()?;
     let listener = tokio::net::TcpListener::bind(address).await?;
     info!(%address, "GPUDeck Hub listening");
-    axum::serve(listener, app).await?;
+    axum::serve(listener, app)
+        .with_graceful_shutdown(async {
+            #[cfg(unix)]
+            {
+                let mut term =
+                    tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+                        .unwrap();
+                tokio::select! { _ = tokio::signal::ctrl_c() => {}, _ = term.recv() => {} }
+            }
+            #[cfg(not(unix))]
+            let _ = tokio::signal::ctrl_c().await;
+        })
+        .await?;
+    state.pool.close().await;
     Ok(())
 }
