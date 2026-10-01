@@ -2,7 +2,11 @@ use crate::{AppState, db::timestamp};
 use chrono::{DateTime, Duration as ChronoDuration, FixedOffset, Utc};
 use serde_json::json;
 use sqlx::{Row, SqlitePool};
-use std::{sync::Arc, time::Duration};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    sync::Arc,
+    time::Duration,
+};
 use uuid::Uuid;
 
 pub(crate) fn beijing_time(time: DateTime<Utc>) -> String {
@@ -151,17 +155,47 @@ async fn enqueue_policy_events(state: &AppState) -> anyhow::Result<()> {
                 .bind(Uuid::new_v4()).bind(event).bind(key).bind(content).bind(json!(mentioned.into_iter().collect::<Vec<_>>())).execute(&mut *tx).await?;
         }
     }
-    let rows=sqlx::query("SELECT p.gpu_id,p.username,p.pid,n.name,g.display_index,u.wecom_user_id FROM current_processes p JOIN gpus g ON g.id=p.gpu_id JOIN nodes n ON n.id=g.node_id LEFT JOIN users u ON u.linux_username=p.username WHERE p.sampled_at>strftime('%Y-%m-%dT%H:%M:%fZ','now','-2 minutes') AND NOT EXISTS(SELECT 1 FROM reservation_allocations a JOIN reservations r ON r.id=a.reservation_id JOIN users ru ON ru.id=r.owner_id WHERE a.gpu_id=p.gpu_id AND r.status='active' AND a.starts_at<=strftime('%Y-%m-%dT%H:%M:%fZ','now') AND a.ends_at>strftime('%Y-%m-%dT%H:%M:%fZ','now') AND ru.linux_username=p.username) ORDER BY p.pid").fetch_all(&mut *tx).await?;
+    let rows=sqlx::query("SELECT p.gpu_id,g.node_id,p.username,p.pid,n.name,g.display_index,u.wecom_user_id FROM current_processes p JOIN gpus g ON g.id=p.gpu_id JOIN nodes n ON n.id=g.node_id LEFT JOIN users u ON u.linux_username=p.username WHERE p.sampled_at>strftime('%Y-%m-%dT%H:%M:%fZ','now','-2 minutes') AND NOT EXISTS(SELECT 1 FROM reservation_allocations a JOIN reservations r ON r.id=a.reservation_id JOIN users ru ON ru.id=r.owner_id WHERE a.gpu_id=p.gpu_id AND r.status='active' AND a.starts_at<=strftime('%Y-%m-%dT%H:%M:%fZ','now') AND a.ends_at>strftime('%Y-%m-%dT%H:%M:%fZ','now') AND ru.linux_username=p.username) ORDER BY p.pid").fetch_all(&mut *tx).await?;
+    let mut users: BTreeMap<String, Vec<sqlx::sqlite::SqliteRow>> = BTreeMap::new();
     for row in rows {
-        let gpu: Uuid = row.get("gpu_id");
-        let user: String = row.get("username");
-        let node: String = row.get("name");
-        let index: i32 = row.get("display_index");
-        let pid: i64 = row.get("pid");
-        let mentioned: Option<String> = row.get("wecom_user_id");
+        users.entry(row.get("username")).or_default().push(row);
+    }
+    for (user, processes) in users {
+        let mentioned: Option<String> = processes[0].get("wecom_user_id");
+        // A PID is node-local and may appear on multiple GPUs. Keep the GPU
+        // association while counting a shared multi-GPU process only once.
+        let mut cards: BTreeMap<(String, i32, Uuid), BTreeSet<i64>> = BTreeMap::new();
+        let mut tasks = BTreeSet::new();
+        for row in processes {
+            let gpu: Uuid = row.get("gpu_id");
+            let node: String = row.get("name");
+            let index: i32 = row.get("display_index");
+            let pid: i64 = row.get("pid");
+            let node_id: Uuid = row.get("node_id");
+            tasks.insert((node_id, pid));
+            cards.entry((node, index, gpu)).or_default().insert(pid);
+        }
+        let gpu_summary = cards
+            .keys()
+            .map(|(node, index, _)| format!("{node} / GPU {index}"))
+            .collect::<Vec<_>>()
+            .join("；");
+        let pid_summary = cards
+            .iter()
+            .map(|((node, index, _), pids)| {
+                format!(
+                    "{node} GPU {index}：{}",
+                    pids.iter()
+                        .map(ToString::to_string)
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                )
+            })
+            .collect::<Vec<_>>()
+            .join("；");
         sqlx::query("INSERT INTO notification_outbox(id,event_type,dedupe_key,content,mentioned_user_ids) VALUES(?1,'usage.unreserved',?2,?3,?4) ON CONFLICT(dedupe_key) DO NOTHING")
-            .bind(Uuid::new_v4()).bind(format!("unreserved-{gpu}-{user}-{hour}"))
-            .bind(crate::notification::markdown("检测到未预约使用", "warning", &[("用户", user.clone()), ("GPU", format!("{node} / GPU {index}")), ("进程 PID", pid.to_string())], "请补充预约或联系团队协调。系统仅通知，不会终止进程。", &state.public_url, now))
+            .bind(Uuid::new_v4()).bind(format!("unreserved-user-{user}-{hour}"))
+            .bind(crate::notification::markdown("检测到未预约使用", "warning", &[("用户", user.clone()), ("占用汇总", format!("{} 张 GPU / {} 个进程", cards.len(), tasks.len())), ("GPU", gpu_summary), ("进程 PID", pid_summary)], "请补充预约或联系团队协调。系统仅通知，不会终止进程。资源或进程过多时摘要会截断，请打开 GPUDeck 查看完整占用。", &state.public_url, now))
             .bind(json!(mentioned.into_iter().collect::<Vec<_>>())).execute(&mut *tx).await?;
     }
     tx.commit().await?;

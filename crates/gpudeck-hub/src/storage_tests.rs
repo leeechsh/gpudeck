@@ -418,6 +418,123 @@ async fn sqlite_agent_snapshot_replay_and_user_sync() {
 }
 
 #[tokio::test]
+async fn sqlite_unreserved_alerts_aggregate_per_user_across_nodes_and_gpus() {
+    let f = Fixture::new().await;
+    let now = Utc::now();
+    let other_node = Uuid::new_v4();
+    sqlx::query("INSERT INTO nodes(id,name,hostname,token_hash) VALUES(?1,'H200','h200','test')")
+        .bind(other_node)
+        .execute(&f.state.pool)
+        .await
+        .unwrap();
+    let second = Uuid::new_v4();
+    let third = Uuid::new_v4();
+    for (gpu, node, index) in [(second, f.node, 1), (third, other_node, 0)] {
+        sqlx::query("INSERT INTO gpus(id,node_id,gpu_uuid,display_index,name,memory_total_mb,last_seen_at) VALUES(?1,?2,?3,?4,'Test',100,?5)")
+            .bind(gpu).bind(node).bind(gpu.to_string()).bind(index).bind(db::timestamp(now)).execute(&f.state.pool).await.unwrap();
+    }
+    for (gpu, pid, user, sampled) in [
+        (f.gpu, 42, "alice", now),
+        (f.gpu, 43, "alice", now),
+        (second, 42, "alice", now), // Same PID on two GPUs is one task.
+        (third, 42, "alice", now),  // Same PID on another node is a new task.
+        (f.gpu, 99, "bob", now),
+        (third, 100, "stale", now - Duration::minutes(3)),
+    ] {
+        sqlx::query("INSERT INTO current_processes(gpu_id,pid,username,command,memory_used_mb,sampled_at) VALUES(?1,?2,?3,'python',100,?4)")
+            .bind(gpu).bind(pid).bind(user).bind(db::timestamp(sampled)).execute(&f.state.pool).await.unwrap();
+    }
+    worker::tick(&f.state, &reqwest::Client::new())
+        .await
+        .unwrap();
+    worker::tick(&f.state, &reqwest::Client::new())
+        .await
+        .unwrap();
+    let messages = sqlx::query(
+        "SELECT dedupe_key,content FROM notification_outbox WHERE event_type='usage.unreserved'",
+    )
+    .fetch_all(&f.state.pool)
+    .await
+    .unwrap();
+    assert_eq!(messages.len(), 2);
+    let alice = messages
+        .iter()
+        .find(|row| {
+            row.get::<String, _>("dedupe_key")
+                .starts_with("unreserved-user-alice-")
+        })
+        .unwrap();
+    let text: String = alice.get("content");
+    assert!(text.contains("3 张 GPU / 3 个进程"));
+    for resource in [
+        "TestNode / GPU 0",
+        "TestNode / GPU 1",
+        "H200 / GPU 0",
+        "42, 43",
+    ] {
+        assert!(text.contains(resource), "{text}");
+    }
+    assert!(!text.contains("99"));
+    assert!(!text.contains("stale"));
+    // Check the real sender posts only one message per user, not per GPU.
+    let (sender, mut received) = tokio::sync::mpsc::channel::<Value>(4);
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let app = Router::new().route(
+        "/webhook",
+        axum::routing::post(move |axum::Json(body): axum::Json<Value>| {
+            let sender = sender.clone();
+            async move {
+                sender.send(body).await.unwrap();
+                axum::Json(json!({"errcode":0}))
+            }
+        }),
+    );
+    let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+    let state = AppState {
+        pool: f.state.pool.clone(),
+        public_url: f.state.public_url.clone(),
+        secure_cookie: false,
+        wecom_webhook: Some(format!("http://{address}/webhook")),
+    };
+    let client = reqwest::Client::builder().no_proxy().build().unwrap();
+    worker::tick(&state, &client).await.unwrap();
+    let first = received.try_recv().unwrap();
+    let second_message = received.try_recv().unwrap();
+    assert!(received.try_recv().is_err());
+    let delivered = [&first, &second_message];
+    assert_eq!(
+        delivered
+            .iter()
+            .filter(|message| message["markdown"]["content"]
+                .as_str()
+                .unwrap()
+                .contains("3 张 GPU / 3 个进程"))
+            .count(),
+        1
+    );
+    // Adding another GPU for an already-notified user in the same hour must
+    // not create another message.
+    sqlx::query("INSERT INTO current_processes(gpu_id,pid,username,command,memory_used_mb,sampled_at) VALUES(?1,101,'bob','python',100,?2)")
+        .bind(third).bind(db::timestamp(Utc::now())).execute(&f.state.pool).await.unwrap();
+    worker::tick(&state, &client).await.unwrap();
+    assert!(received.try_recv().is_err());
+    server.abort();
+    server.await.unwrap_err();
+    // Existing hourly notifications must not duplicate after restarting ticks.
+    assert_eq!(
+        messages
+            .iter()
+            .filter(|row| row
+                .get::<String, _>("dedupe_key")
+                .starts_with("unreserved-user-bob-"))
+            .count(),
+        1
+    );
+    f.close().await;
+}
+
+#[tokio::test]
 async fn sqlite_usage_alerts_use_markdown_resource_details() {
     let f = Fixture::new().await;
     let now = Utc::now();

@@ -546,7 +546,7 @@ dependencies = [
 
 [[package]]
 name = "gpudeck-agent"
-version = "2.15.0"
+version = "2.15.1"
 dependencies = [
  "anyhow",
  "chrono",
@@ -561,7 +561,7 @@ dependencies = [
 
 [[package]]
 name = "gpudeck-domain"
-version = "2.15.0"
+version = "2.15.1"
 dependencies = [
  "chrono",
  "serde",
@@ -571,7 +571,7 @@ dependencies = [
 
 [[package]]
 name = "gpudeck-hub"
-version = "2.15.0"
+version = "2.15.1"
 dependencies = [
  "anyhow",
  "argon2",
