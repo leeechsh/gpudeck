@@ -4,6 +4,36 @@
 
 ## 1. 在构建机器生成部署包
 
+### 自动下载部署（无需本地编译）
+
+下载仓库提供的部署入口，建议先审阅脚本再用 sudo 执行：
+
+```bash
+curl -fL --proto '=https' --proto-redir '=https' \
+  https://raw.githubusercontent.com/leeechsh/gpudeck/main/deploy/install-from-release.sh \
+  -o install-from-release.sh
+```
+
+Hub 示例（替换为自己的 IP；安装时交互输入初始管理员密码）：
+
+```bash
+sudo bash install-from-release.sh --component hub --version latest \
+  --listen 100.100.100.10:37935 --public-url http://100.100.100.10:37935
+```
+
+Agent 示例（先在 Hub 注册节点并下载 `.env`）：
+
+```bash
+sudo bash install-from-release.sh --component agent --version latest \
+  --config /absolute/path/node.env --hub-url http://100.100.100.10:37935
+```
+
+入口自动识别 Linux x86_64/aarch64（含 amd64/arm64 别名），查询已公开 Release，下载完整部署包与对应 SHA256SUMS，通过校验和归档安全检查后执行原首次安装脚本。依赖 Bash、curl、jq、tar、sha256sum；运行需兼容的 glibc/systemd。不会自动安装系统依赖，也不会覆盖已有部署。
+
+指定版本可用 `--version v2.11.0`（该版本须已公开且有完整附件）；`--check` 仅下载校验并检查参数，不修改服务。`latest` 可能没有新格式附件，此时脚本会明确报错，不回退到未经校验的下载。凭据不上传到 GitHub。互联网代理仍遵循 curl 的环境配置。
+
+### 从源码构建
+
 也可从 GitHub Releases 下载与机器架构匹配的完整部署包：`gpudeck-版本-linux-x86_64.tar.gz` 或 `gpudeck-版本-linux-aarch64.tar.gz`。标签触发双架构原生构建，通过测试与校验后自动发布；以实际可见附件为准。CI 使用 Ubuntu 22.04/glibc，并非全静态或 Alpine/musl 包。
 
 构建机器需要 Node.js/npm、Rust、C 编译器、tar。目标机器须与构建机 CPU 架构及 Linux/glibc 兼容；不是跨平台完全静态程序。

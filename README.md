@@ -10,7 +10,7 @@
 
 面向研究实验室与 AI 团队的协作式 GPU 资源管理平台。将多台服务器的 GPU 状态、人员占用、预约日历和使用统计集中到一个 Web 门户，无需部署 Slurm。
 
-当前开发版本：**v2.10.0**。仓库：[leeechsh/gpudeck](https://github.com/leeechsh/gpudeck)。许可证：[GPL-3.0](LICENSE)。
+当前开发版本：**v2.11.0**。仓库：[leeechsh/gpudeck](https://github.com/leeechsh/gpudeck)。许可证：[GPL-3.0](LICENSE)。
 
 ## 能做什么
 
@@ -37,6 +37,8 @@ GPUDeck 是**协作式预约系统，不是作业调度器**：预约不会分�
 本仓库仍包含继承自 RackTop 的 Tauri 桌面代码，但其 SSH 终端、项目同步和任务启动能力不应视为当前 Hub 的功能，也不作为下面部署流程的依赖。
 
 ## 快速部署到新服务器
+
+无需编译的自动下载入口：参见 [从 GitHub Release 自动安装 Hub/Agent](docs/QUICKSTART.md#自动下载部署无需本地编译)。脚本自动匹配 x86-64/ARM64、支持 latest/指定版本，校验后安装；要求目标版本已公开发布且包含部署附件。
 
 ### 1. 构建部署包
 

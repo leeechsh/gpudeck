@@ -10,7 +10,7 @@
 
 A shared Web portal for GPU telemetry, user occupancy, reservations and usage statistics across multiple servers. No Slurm required.
 
-Current development version: **v2.10.0**. Repository: [leeechsh/gpudeck](https://github.com/leeechsh/gpudeck). License: [GPL-3.0](LICENSE).
+Current development version: **v2.11.0**. Repository: [leeechsh/gpudeck](https://github.com/leeechsh/gpudeck). License: [GPL-3.0](LICENSE).
 
 ## Features
 
@@ -38,6 +38,8 @@ Recommended deployment: **one executable + systemd + SQLite**. Runtime hosts do 
 Inherited RackTop Tauri desktop code is still present. Its SSH terminal, project synchronization and job-launch features are not current Hub features and are not required by this deployment.
 
 ## Quick deployment on new servers
+
+For installation without compiling, see the [Release download installer](docs/QUICKSTART.md). It detects Linux x86-64/ARM64, selects latest or a pinned version, validates the bundle, and invokes the fresh installer. Published release assets are required; tags alone are insufficient.
 
 ### 1. Build the server bundle
 
