@@ -418,6 +418,216 @@ async fn sqlite_agent_snapshot_replay_and_user_sync() {
 }
 
 #[tokio::test]
+async fn sqlite_auto_release_waits_for_all_nodes_and_posts_notice() {
+    let f = Fixture::new().await;
+    let now = Utc::now();
+    let node = Uuid::new_v4();
+    let gpu = Uuid::new_v4();
+    sqlx::query("INSERT INTO nodes(id,name,hostname,token_hash) VALUES(?1,'SecondNode','second','second-test')").bind(node).execute(&f.state.pool).await.unwrap();
+    sqlx::query("INSERT INTO gpus(id,node_id,gpu_uuid,display_index,name,memory_total_mb,last_seen_at) VALUES(?1,?2,'second-gpu',0,'Test',100,?3)").bind(gpu).bind(node).bind(db::timestamp(now)).execute(&f.state.pool).await.unwrap();
+    let mut request = f.booking(now + Duration::hours(1), now + Duration::hours(2));
+    request["gpuIds"] = json!([f.gpu, gpu]);
+    let (status, booking, _) = call(&f.app, Some(&f.user), "POST", "/reservations", request).await;
+    assert_eq!(status, StatusCode::CREATED);
+    let id = Uuid::parse_str(booking["id"].as_str().unwrap()).unwrap();
+    let start = db::timestamp(now - Duration::minutes(31));
+    sqlx::query("UPDATE reservations SET starts_at=?2 WHERE id=?1")
+        .bind(id)
+        .bind(&start)
+        .execute(&f.state.pool)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE reservation_allocations SET starts_at=?2 WHERE reservation_id=?1")
+        .bind(id)
+        .bind(&start)
+        .execute(&f.state.pool)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE nodes SET last_seen_at=?2,last_sample_at=?2 WHERE id=?1")
+        .bind(f.node)
+        .bind(db::timestamp(now))
+        .execute(&f.state.pool)
+        .await
+        .unwrap();
+    worker::tick(&f.state, &reqwest::Client::new())
+        .await
+        .unwrap();
+    let status: String = sqlx::query_scalar("SELECT status FROM reservations WHERE id=?1")
+        .bind(id)
+        .fetch_one(&f.state.pool)
+        .await
+        .unwrap();
+    assert_eq!(status, "active");
+    // Once both nodes resume fresh sampling, release the entire reservation.
+    sqlx::query("UPDATE nodes SET last_seen_at=?2,last_sample_at=?2 WHERE id=?1")
+        .bind(node)
+        .bind(db::timestamp(now))
+        .execute(&f.state.pool)
+        .await
+        .unwrap();
+    let (sender, mut received) = tokio::sync::mpsc::channel::<Value>(4);
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let app = Router::new().route(
+        "/webhook",
+        axum::routing::post(move |axum::Json(body): axum::Json<Value>| {
+            let sender = sender.clone();
+            async move {
+                sender.send(body).await.unwrap();
+                axum::Json(json!({"errcode":0}))
+            }
+        }),
+    );
+    let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+    let state = AppState {
+        pool: f.state.pool.clone(),
+        public_url: f.state.public_url.clone(),
+        secure_cookie: false,
+        wecom_webhook: Some(format!("http://{address}/webhook")),
+    };
+    let client = reqwest::Client::builder().no_proxy().build().unwrap();
+    worker::tick(&state, &client).await.unwrap();
+    let mut notices = Vec::new();
+    while let Ok(message) = received.try_recv() {
+        notices.push(message);
+    }
+    let released: Vec<_> = notices
+        .iter()
+        .filter(|message| {
+            message["markdown"]["content"]
+                .as_str()
+                .unwrap()
+                .contains("预约已自动释放")
+        })
+        .collect();
+    assert_eq!(released.len(), 1);
+    let content = released[0]["markdown"]["content"].as_str().unwrap();
+    assert!(content.contains("SecondNode / GPU 0"));
+    assert!(content.contains("TestNode / GPU 0"));
+    assert!(!content.contains("北京时间"));
+    let count: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM reservation_allocations WHERE reservation_id=?1")
+            .bind(id)
+            .fetch_one(&f.state.pool)
+            .await
+            .unwrap();
+    assert_eq!(count, 0);
+    worker::tick(&state, &client).await.unwrap();
+    assert!(received.try_recv().is_err());
+    server.abort();
+    server.await.unwrap_err();
+    f.close().await;
+}
+
+#[tokio::test]
+async fn sqlite_releases_unused_bookings_after_thirty_minutes() {
+    for (minutes, fresh, previously_used, process_user, cancelled) in [
+        (29, true, false, None, false),
+        (30, true, false, None, true),
+        (31, true, true, None, false),
+        (31, false, false, None, false),
+        (31, true, false, Some("alice"), false),
+        (31, true, false, Some("bob"), true),
+    ] {
+        let f = Fixture::new().await;
+        let now = Utc::now();
+        let (status, booking, _) = call(
+            &f.app,
+            Some(&f.user),
+            "POST",
+            "/reservations",
+            f.booking(now + Duration::hours(1), now + Duration::hours(2)),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CREATED);
+        let id = Uuid::parse_str(booking["id"].as_str().unwrap()).unwrap();
+        let start = db::timestamp(now - Duration::minutes(minutes));
+        sqlx::query("UPDATE reservations SET starts_at=?2,checked_in_at=?3 WHERE id=?1")
+            .bind(id)
+            .bind(&start)
+            .bind(previously_used.then(|| db::timestamp(now)))
+            .execute(&f.state.pool)
+            .await
+            .unwrap();
+        sqlx::query("UPDATE reservation_allocations SET starts_at=?2 WHERE reservation_id=?1")
+            .bind(id)
+            .bind(&start)
+            .execute(&f.state.pool)
+            .await
+            .unwrap();
+        let sample = db::timestamp(if fresh {
+            now
+        } else {
+            now - Duration::minutes(3)
+        });
+        sqlx::query("UPDATE nodes SET last_seen_at=?2,last_sample_at=?2 WHERE id=?1")
+            .bind(f.node)
+            .bind(sample)
+            .execute(&f.state.pool)
+            .await
+            .unwrap();
+        if let Some(username) = process_user {
+            sqlx::query("INSERT INTO current_processes(gpu_id,pid,username,command,memory_used_mb,sampled_at) VALUES(?1,42,?2,'python',100,?3)")
+                .bind(f.gpu).bind(username).bind(db::timestamp(now)).execute(&f.state.pool).await.unwrap();
+        }
+        let client = reqwest::Client::new();
+        worker::tick(&f.state, &client).await.unwrap();
+        worker::tick(&f.state, &client).await.unwrap();
+        let status: String = sqlx::query_scalar("SELECT status FROM reservations WHERE id=?1")
+            .bind(id)
+            .fetch_one(&f.state.pool)
+            .await
+            .unwrap();
+        assert_eq!(
+            status,
+            if cancelled { "cancelled" } else { "active" },
+            "{minutes} / fresh={fresh} / used={previously_used} / {process_user:?}"
+        );
+        let allocations: i64 = sqlx::query_scalar(
+            "SELECT count(*) FROM reservation_allocations WHERE reservation_id=?1",
+        )
+        .bind(id)
+        .fetch_one(&f.state.pool)
+        .await
+        .unwrap();
+        assert_eq!(allocations, if cancelled { 0 } else { 1 });
+        let notifications: Vec<String> = sqlx::query_scalar(
+            "SELECT content FROM notification_outbox WHERE event_type='reservation.auto_released'",
+        )
+        .fetch_all(&f.state.pool)
+        .await
+        .unwrap();
+        assert_eq!(notifications.len(), usize::from(cancelled));
+        if cancelled {
+            assert!(notifications[0].contains("预约已自动释放"));
+            assert!(notifications[0].contains("TestNode / GPU 0"));
+            assert!(!notifications[0].contains("北京时间"));
+            let audit: i64 = sqlx::query_scalar(
+                "SELECT count(*) FROM audit_events WHERE action='reservation.auto_release'",
+            )
+            .fetch_one(&f.state.pool)
+            .await
+            .unwrap();
+            assert_eq!(audit, 1);
+            // Previously allocated future time and quota are really available.
+            assert_eq!(
+                call(
+                    &f.app,
+                    Some(&f.user),
+                    "POST",
+                    "/reservations",
+                    f.booking(now + Duration::hours(1), now + Duration::hours(2))
+                )
+                .await
+                .0,
+                StatusCode::CREATED
+            );
+        }
+        f.close().await;
+    }
+}
+
+#[tokio::test]
 async fn sqlite_unreserved_alerts_aggregate_per_user_across_nodes_and_gpus() {
     let f = Fixture::new().await;
     let now = Utc::now();
@@ -745,20 +955,21 @@ async fn sqlite_settings_password_and_worker() {
     .unwrap();
     assert!(reminder.starts_with("### GPUDeck · 预约即将开始"));
     assert!(reminder.contains("TestNode / GPU 0"));
-    assert!(reminder.contains(&format!(
-        "北京时间 UTC+8：{}",
-        worker::beijing_time(upcoming)
-    )));
-    assert!(reminder.contains("通知时间（北京时间 UTC+8）"));
+    assert!(reminder.contains(&format!("{}", worker::beijing_time(upcoming))));
+    assert!(reminder.contains("通知时间（UTC+8）"));
+    assert!(!reminder.contains("北京时间"));
+    assert!(!reminder.contains("无需手动签到"));
     let created: String = sqlx::query_scalar("SELECT content FROM notification_outbox WHERE event_type='reservation.created' ORDER BY created_at DESC LIMIT 1")
         .fetch_one(&f.state.pool).await.unwrap();
     assert!(created.starts_with("### GPUDeck · 预约已创建"));
     assert!(created.contains("TestNode / GPU 0"));
     assert!(created.contains(&format!(
-        "北京时间 UTC+8：{} 至 {}",
+        "{} 至 {}",
         worker::beijing_time(upcoming),
         worker::beijing_time(upcoming + Duration::hours(1))
     )));
+    assert!(!created.contains("北京时间"));
+    assert!(!created.contains("无需手动签到"));
     let seconds: i64 = sqlx::query_scalar("SELECT active_seconds FROM usage_hours")
         .fetch_one(&f.state.pool)
         .await

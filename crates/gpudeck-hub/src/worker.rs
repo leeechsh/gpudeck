@@ -28,11 +28,14 @@ pub fn spawn(state: Arc<AppState>) {
 }
 
 pub(crate) async fn tick(state: &AppState, client: &reqwest::Client) -> anyhow::Result<()> {
-    sqlx::query("UPDATE reservations SET status='active',updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE status='scheduled' AND starts_at<=strftime('%Y-%m-%dT%H:%M:%fZ','now') AND ends_at>strftime('%Y-%m-%dT%H:%M:%fZ','now')").execute(&state.pool).await?;
-    sqlx::query("UPDATE reservations SET status='completed',updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE status IN ('scheduled','active') AND ends_at<=strftime('%Y-%m-%dT%H:%M:%fZ','now')").execute(&state.pool).await?;
+    let mut reservation_tx = state.pool.begin_with("BEGIN IMMEDIATE").await?;
+    sqlx::query("UPDATE reservations SET status='active',updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE status='scheduled' AND starts_at<=strftime('%Y-%m-%dT%H:%M:%fZ','now') AND ends_at>strftime('%Y-%m-%dT%H:%M:%fZ','now')").execute(&mut *reservation_tx).await?;
+    sqlx::query("UPDATE reservations SET status='completed',updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE status IN ('scheduled','active') AND ends_at<=strftime('%Y-%m-%dT%H:%M:%fZ','now')").execute(&mut *reservation_tx).await?;
     // First observed use on any allocated GPU starts the reservation's usage
     // record. Ignore other users, stale samples and samples before its start.
-    sqlx::query("UPDATE reservations AS r SET checked_in_at=strftime('%Y-%m-%dT%H:%M:%fZ','now'),updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE r.status='active' AND r.checked_in_at IS NULL AND r.starts_at<=strftime('%Y-%m-%dT%H:%M:%fZ','now') AND r.ends_at>strftime('%Y-%m-%dT%H:%M:%fZ','now') AND EXISTS(SELECT 1 FROM reservation_allocations a JOIN current_processes p ON p.gpu_id=a.gpu_id JOIN users u ON u.id=r.owner_id WHERE a.reservation_id=r.id AND p.username=u.linux_username AND p.sampled_at>=r.starts_at AND p.sampled_at>strftime('%Y-%m-%dT%H:%M:%fZ','now','-2 minutes') AND p.sampled_at<=strftime('%Y-%m-%dT%H:%M:%fZ','now'))").execute(&state.pool).await?;
+    sqlx::query("UPDATE reservations AS r SET checked_in_at=strftime('%Y-%m-%dT%H:%M:%fZ','now'),updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE r.status='active' AND r.checked_in_at IS NULL AND r.starts_at<=strftime('%Y-%m-%dT%H:%M:%fZ','now') AND r.ends_at>strftime('%Y-%m-%dT%H:%M:%fZ','now') AND EXISTS(SELECT 1 FROM reservation_allocations a JOIN current_processes p ON p.gpu_id=a.gpu_id JOIN users u ON u.id=r.owner_id WHERE a.reservation_id=r.id AND p.username=u.linux_username AND p.sampled_at>=r.starts_at AND p.sampled_at>strftime('%Y-%m-%dT%H:%M:%fZ','now','-2 minutes') AND p.sampled_at<=strftime('%Y-%m-%dT%H:%M:%fZ','now'))").execute(&mut *reservation_tx).await?;
+    release_unused_reservations(state, &mut reservation_tx).await?;
+    reservation_tx.commit().await?;
     enqueue_policy_events(state).await?;
     roll_up_usage(state).await?;
     let Some(webhook) = &state.wecom_webhook else {
@@ -73,6 +76,50 @@ pub(crate) async fn tick(state: &AppState, client: &reqwest::Client) -> anyhow::
     Ok(())
 }
 
+async fn release_unused_reservations(
+    state: &AppState,
+    tx: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
+) -> anyhow::Result<()> {
+    // Usage detection and release hold the same writer lock: a snapshot or
+    // booking cannot race between the decision and releasing its allocations.
+    // All allocated nodes must have fresh samples taken after the booking start.
+    let rows = sqlx::query("SELECT r.id,r.starts_at,r.ends_at,r.project_name,u.display_name,u.wecom_user_id FROM reservations r JOIN users u ON u.id=r.owner_id WHERE r.status='active' AND r.checked_in_at IS NULL AND r.starts_at<=strftime('%Y-%m-%dT%H:%M:%fZ','now','-30 minutes') AND EXISTS(SELECT 1 FROM reservation_allocations a WHERE a.reservation_id=r.id) AND NOT EXISTS(SELECT 1 FROM reservation_allocations a JOIN gpus g ON g.id=a.gpu_id JOIN nodes n ON n.id=g.node_id WHERE a.reservation_id=r.id AND (n.enabled=0 OR g.missing=1 OR n.last_seen_at IS NULL OR n.last_seen_at<=strftime('%Y-%m-%dT%H:%M:%fZ','now','-2 minutes') OR n.last_sample_at IS NULL OR n.last_sample_at<=strftime('%Y-%m-%dT%H:%M:%fZ','now','-2 minutes') OR n.last_sample_at<r.starts_at OR n.last_sample_at>strftime('%Y-%m-%dT%H:%M:%fZ','now') OR g.last_seen_at IS NULL OR g.last_seen_at<=strftime('%Y-%m-%dT%H:%M:%fZ','now','-2 minutes')))")
+        .fetch_all(&mut **tx).await?;
+    for row in rows {
+        let id: Uuid = row.get("id");
+        let start: DateTime<Utc> = row.get("starts_at");
+        let end: DateTime<Utc> = row.get("ends_at");
+        let gpus: Vec<String> = sqlx::query_scalar("SELECT n.name || ' / GPU ' || g.display_index FROM reservation_allocations a JOIN gpus g ON g.id=a.gpu_id JOIN nodes n ON n.id=g.node_id WHERE a.reservation_id=?1 ORDER BY n.name,g.display_index").bind(id).fetch_all(&mut **tx).await?;
+        let content = crate::notification::markdown(
+            "预约已自动释放",
+            "warning",
+            &[
+                ("用户", row.get("display_name")),
+                ("项目", row.get("project_name")),
+                ("GPU", gpus.join("；")),
+                (
+                    "预约时间",
+                    format!("{} 至 {}", beijing_time(start), beijing_time(end)),
+                ),
+            ],
+            "预约开始已满 30 分钟，仍未检测到本人 GPU 进程，已自动取消预约并释放 GPU 名额。如需继续使用，请重新预约。",
+            &state.public_url,
+            Utc::now(),
+        );
+        sqlx::query("UPDATE reservations SET status='cancelled',updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id=?1").bind(id).execute(&mut **tx).await?;
+        sqlx::query("DELETE FROM reservation_allocations WHERE reservation_id=?1")
+            .bind(id)
+            .execute(&mut **tx)
+            .await?;
+        let mentioned: Option<String> = row.get("wecom_user_id");
+        sqlx::query("INSERT INTO notification_outbox(id,event_type,dedupe_key,content,mentioned_user_ids) VALUES(?1,'reservation.auto_released',?2,?3,?4) ON CONFLICT(dedupe_key) DO NOTHING")
+            .bind(Uuid::new_v4()).bind(format!("auto-release-{id}")).bind(content).bind(json!(mentioned.into_iter().collect::<Vec<_>>())).execute(&mut **tx).await?;
+        sqlx::query("INSERT INTO audit_events(id,actor_id,action,object_type,object_id,detail) VALUES(?1,NULL,'reservation.auto_release','reservation',?2,?3)")
+            .bind(Uuid::new_v4()).bind(id.to_string()).bind(json!({"reason":"no_usage_after_30_minutes","gpuCount":gpus.len()})).execute(&mut **tx).await?;
+    }
+    Ok(())
+}
+
 async fn enqueue_policy_events(state: &AppState) -> anyhow::Result<()> {
     let mut tx = state.pool.begin_with("BEGIN IMMEDIATE").await?;
     let queries = [
@@ -103,15 +150,13 @@ async fn enqueue_policy_events(state: &AppState) -> anyhow::Result<()> {
             let project: String = row.get("project_name");
             let start: chrono::DateTime<Utc> = row.get("starts_at");
             let (title, color, note) = match event {
-                "reservation.reminder" => (
-                    "预约即将开始",
-                    "info",
-                    "约 15 分钟后开始，请准备任务；无需手动签到。",
-                ),
+                "reservation.reminder" => {
+                    ("预约即将开始", "info", "约 15 分钟后开始，请准备任务。")
+                }
                 "reservation.no_show" => (
                     "预约尚未检测到使用",
                     "warning",
-                    "预约开始 15 分钟仍未检测到本人 GPU 进程。节点离线时无法确认使用情况；预约不会自动释放。",
+                    "预约开始 15 分钟仍未检测到本人 GPU 进程。开始满 30 分钟且仍未使用时，系统将自动释放预约。节点离线或采样过期时暂停自动释放。",
                 ),
                 _ => (
                     "预约已到期但任务仍在运行",
@@ -134,11 +179,7 @@ async fn enqueue_policy_events(state: &AppState) -> anyhow::Result<()> {
                     ("GPU", gpus.join("；")),
                     (
                         "预约时间",
-                        format!(
-                            "北京时间 UTC+8：{} 至 {}",
-                            beijing_time(start),
-                            beijing_time(end)
-                        ),
+                        format!("{} 至 {}", beijing_time(start), beijing_time(end)),
                     ),
                 ],
                 note,

@@ -356,14 +356,14 @@ async fn create_reservation(
                 (
                     "预约时间",
                     format!(
-                        "北京时间 UTC+8：{} 至 {}",
+                        "{} 至 {}",
                         crate::worker::beijing_time(input.starts_at),
                         crate::worker::beijing_time(input.ends_at)
                     ),
                 ),
                 ("用途", input.purpose.clone()),
             ],
-            "无需手动签到，系统会根据所预约 GPU 上的本人进程自动识别使用。",
+            "",
             &state.public_url,
             Utc::now(),
         ),
