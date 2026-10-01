@@ -218,7 +218,11 @@ async fn sqlite_same_owner_peak_and_reservation_actions() {
     );
     let second = Uuid::new_v4();
     sqlx::query("INSERT INTO gpus(id,node_id,gpu_uuid,display_index,name,memory_total_mb,last_seen_at) VALUES(?1,?2,'gpu2',1,'L40S',46080,?3)").bind(second).bind(f.node).bind(db::timestamp(Utc::now())).execute(&f.state.pool).await.unwrap();
-    let start = Utc::now() - Duration::minutes(1);
+    // Use the current window; subtracting a minute crosses into the previous
+    // window when CI happens to run at :00/:30 and is correctly rejected.
+    let now = Utc::now();
+    let start =
+        chrono::DateTime::from_timestamp(now.timestamp().div_euclid(1800) * 1800, 0).unwrap();
     let end = start + Duration::hours(1);
     let first = f.booking(start, end);
     let mut other = first.clone();

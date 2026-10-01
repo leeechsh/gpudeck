@@ -4,6 +4,8 @@
 
 ## 1. 在构建机器生成部署包
 
+也可从 GitHub Releases 下载与机器架构匹配的完整部署包：`gpudeck-版本-linux-x86_64.tar.gz` 或 `gpudeck-版本-linux-aarch64.tar.gz`。标签触发双架构原生构建，通过测试与校验后自动发布；以实际可见附件为准。CI 使用 Ubuntu 22.04/glibc，并非全静态或 Alpine/musl 包。
+
 构建机器需要 Node.js/npm、Rust、C 编译器、tar。目标机器须与构建机 CPU 架构及 Linux/glibc 兼容；不是跨平台完全静态程序。
 
 ```bash

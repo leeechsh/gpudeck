@@ -1,6 +1,6 @@
 [package]
 name = "gpudeck"
-version = "2.9.1"
+version = "2.10.0"
 description = "Live GPU & CPU monitoring for every server"
 authors = ["GPUDeck"]
 edition = "2024"

@@ -10,7 +10,7 @@
 
 A shared Web portal for GPU telemetry, user occupancy, reservations and usage statistics across multiple servers. No Slurm required.
 
-Current development version: **v2.9.1**. Repository: [leeechsh/gpudeck](https://github.com/leeechsh/gpudeck). License: [GPL-3.0](LICENSE).
+Current development version: **v2.10.0**. Repository: [leeechsh/gpudeck](https://github.com/leeechsh/gpudeck). License: [GPL-3.0](LICENSE).
 
 ## Features
 
@@ -145,7 +145,9 @@ The preview defaults to port 1420; it does not bypass authentication. First Hub 
 - [Detailed version history](docs/VERSION_INFOS.md)
 - [Short changelog](docs/Version_overview.md)
 
-Git tags are not GitHub Releases. Linux bundles can currently be built from source; downloadable assets or verified macOS/Windows installers are not promised for every version. Check the actual assets on [GitHub Releases](https://github.com/leeechsh/gpudeck/releases).
+Matching `v*` tags trigger native x86-64 and ARM64 builds and tests, followed by automatic publication of server bundles, gzip-compressed Hub/Agent executables and SHA256SUMS to [GitHub Releases](https://github.com/leeechsh/gpudeck/releases). Both architectures must succeed; downloaded checksums and GitHub Assets digests are verified before publication. Existing published releases are not overwritten.
+
+Asset names use `x86_64` and `aarch64`. CI builds on Ubuntu 22.04/glibc; use a compatible Linux host. Standalone `.gz` executables require `gunzip` and `chmod +x`. Main/PR/manual branch runs only generate Actions artifacts. Server releases do not imply verified or published macOS/Windows desktop installers.
 
 ## Attribution and license
 

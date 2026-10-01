@@ -1,14 +1,41 @@
-name: Standalone Hub
+name: Linux Hub and Agent
 on:
   push:
     branches: [main]
+    tags: ['v*']
   pull_request:
   workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: linux-server-${{ github.ref }}
+  cancel-in-progress: false
 jobs:
   linux:
-    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-22.04
+            arch: x86_64
+          - runner: ubuntu-22.04-arm
+            arch: aarch64
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Validate native architecture and release version
+        env:
+          EXPECTED_ARCH: ${{ matrix.arch }}
+        run: |
+          set -euo pipefail
+          test "$(uname -m)" = "$EXPECTED_ARCH"
+          if [[ "$GITHUB_REF_TYPE" == tag ]]; then
+            test "$GITHUB_REF_NAME" = "v$(node -p "require('./package.json').version")"
+            git merge-base --is-ancestor "$GITHUB_SHA" origin/main
+          fi
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -21,7 +48,30 @@ jobs:
       - run: cargo test --locked --workspace
       - run: cargo fmt --all --check
       - run: bash -n deploy/*.sh
+      - run: bash scripts/smoke-server-hub.sh
       - uses: actions/upload-artifact@v4
         with:
-          name: gpudeck-hub-linux-x86_64
-          path: target/server-bundles/*.tar.gz
+          name: gpudeck-linux-${{ matrix.arch }}
+          path: |
+            target/server-bundles/*.tar.gz
+            target/server-bundles/*.gz
+            target/server-bundles/SHA256SUMS-*
+          if-no-files-found: error
+  release:
+    if: github.ref_type == 'tag' && startsWith(github.ref_name, 'v')
+    needs: linux
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: gpudeck-linux-*
+          merge-multiple: true
+          path: release-assets
+      - name: Publish verified server assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: bash scripts/publish-server-release.sh release-assets

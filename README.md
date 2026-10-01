@@ -10,7 +10,7 @@
 
 面向研究实验室与 AI 团队的协作式 GPU 资源管理平台。将多台服务器的 GPU 状态、人员占用、预约日历和使用统计集中到一个 Web 门户，无需部署 Slurm。
 
-当前开发版本：**v2.9.1**。仓库：[leeechsh/gpudeck](https://github.com/leeechsh/gpudeck)。许可证：[GPL-3.0](LICENSE)。
+当前开发版本：**v2.10.0**。仓库：[leeechsh/gpudeck](https://github.com/leeechsh/gpudeck)。许可证：[GPL-3.0](LICENSE)。
 
 ## 能做什么
 
@@ -146,7 +146,9 @@ VITE_HUB_PROXY_TARGET=http://127.0.0.1:37935 npm run dev
 - [详细版本记录](docs/VERSION_INFOS.md)
 - [简明更新说明](docs/Version_overview.md)
 
-仓库标签与 GitHub Release 是不同交付物。当前可从源码构建 Linux 部署包；不承诺每个版本已发布可下载附件或验证过 macOS/Windows 桌面安装包。以 [GitHub Releases](https://github.com/leeechsh/gpudeck/releases) 实际附件为准。
+推送与版本号匹配的 `v*` 标签后，Linux 工作流会在 x86-64 和 ARM64 原生 runner 上构建、测试，再自动上传部署包、Hub/Agent 的 gzip 压缩可执行文件及 SHA256SUMS 到 [GitHub Releases](https://github.com/leeechsh/gpudeck/releases)。两种架构均成功，下载校验和 GitHub Assets Digest 匹配后才公开 Release；已有公开 Release 不会被自动覆盖。
+
+文件名中 x86-64 为 `x86_64`，ARM64 为 `aarch64`。CI 基于 Ubuntu 22.04/glibc 构建，需要兼容的 Linux 运行环境；单独 `.gz` 程序需 `gunzip` 解压并 `chmod +x`。main/PR/手动分支运行只生成 Actions Artifact，不发布 Release。Linux 服务器发布不代表 macOS/Windows 桌面安装包已验证或发布，以实际附件为准。
 
 ## 致谢与许可证
 

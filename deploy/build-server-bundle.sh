@@ -9,3 +9,8 @@ archive="target/server-bundles/gpudeck-${version}-$(uname -s | tr '[:upper:]' '[
 tar -czf "$archive" target/release/gpudeck-hub target/release/gpudeck-agent deploy/install-hub.sh deploy/install-agent.sh deploy/gpudeck-hub.service deploy/gpudeck-agent.service docs/QUICKSTART.md
 echo "Server bundle: $archive"
 sha256sum "$archive"
+platform="$(uname -s | tr '[:upper:]' '[:lower:]')-$(uname -m)"
+for component in hub agent; do
+    gzip -n -c "target/release/gpudeck-$component" > "target/server-bundles/gpudeck-$component-$version-$platform.gz"
+done
+(cd target/server-bundles && sha256sum "gpudeck-$version-$platform.tar.gz" "gpudeck-hub-$version-$platform.gz" "gpudeck-agent-$version-$platform.gz" > "SHA256SUMS-$version-$platform")
