@@ -10,7 +10,7 @@
 
 A shared Web portal for GPU telemetry, user occupancy, reservations and usage statistics across multiple servers. No Slurm required.
 
-Current development version: **v2.11.0**. Repository: [leeechsh/gpudeck](https://github.com/leeechsh/gpudeck). License: [GPL-3.0](LICENSE).
+Current development version: **v2.11.1**. Repository: [leeechsh/gpudeck](https://github.com/leeechsh/gpudeck). License: [GPL-3.0](LICENSE).
 
 ## Features
 

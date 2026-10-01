@@ -90,7 +90,7 @@ describe('App startup update check', () => {
     expect(releaseNotes).toBeDefined()
     await act(async () => releaseNotes?.click())
     expect(open).toHaveBeenCalledWith(
-      'https://github.com/leeechsh/gpudeck/releases/tag/v2.11.0',
+      'https://github.com/leeechsh/gpudeck/releases/tag/v2.11.1',
       '_blank',
       'noopener,noreferrer',
     )

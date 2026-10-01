@@ -25,7 +25,12 @@ verify_dir=$(mktemp -d)
 for file in "${upload[@]}"; do gh release download "$tag" --pattern "$(basename "$file")" --dir "$verify_dir"; done
 for arch in x86_64 aarch64; do (cd "$verify_dir" && sha256sum -c "SHA256SUMS-$version-linux-$arch"); done
 # Match GitHub Assets digests against locally verified checksums.
-gh api "repos/$GITHUB_REPOSITORY/releases/tags/$tag" > "$verify_dir/metadata.json"
+# Draft releases can have an untagged URL; the tag REST endpoint may return
+# 404 even though gh release view/download resolve the authenticated draft.
+# Resolve its actual ID URL through gh, then read that release directly.
+release_api=$(gh release view "$tag" --json apiUrl --jq .apiUrl)
+[[ "$release_api" == "https://api.github.com/repos/$GITHUB_REPOSITORY/releases/"* && "${release_api##*/}" =~ ^[0-9]+$ ]]
+gh api "$release_api" > "$verify_dir/metadata.json"
 node scripts/verify-server-assets.mjs "$assets" "$verify_dir/metadata.json"
 notes="$verify_dir/notes.md"
 {

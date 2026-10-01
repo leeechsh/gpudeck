@@ -10,7 +10,7 @@
 
 面向研究实验室与 AI 团队的协作式 GPU 资源管理平台。将多台服务器的 GPU 状态、人员占用、预约日历和使用统计集中到一个 Web 门户，无需部署 Slurm。
 
-当前开发版本：**v2.11.0**。仓库：[leeechsh/gpudeck](https://github.com/leeechsh/gpudeck)。许可证：[GPL-3.0](LICENSE)。
+当前开发版本：**v2.11.1**。仓库：[leeechsh/gpudeck](https://github.com/leeechsh/gpudeck)。许可证：[GPL-3.0](LICENSE)。
 
 ## 能做什么
 
