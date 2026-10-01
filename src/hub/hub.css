@@ -19,10 +19,13 @@
 .timeline-legend span { display: inline-flex; align-items: center; gap: 5px; }
 .timeline-status { width: 8px; height: 8px; border-radius: 2px; background: var(--blue); }
 .timeline-status--active { background: var(--green); }.timeline-status--overrun { background: var(--red); }.timeline-status--completed { background: var(--text-tertiary); }
-.timeline-scroll { padding: 0; max-height: 680px; overflow: auto; position: relative; }
+.timeline-scroll { padding: 0; max-height: 680px; overflow: auto; position: relative; overflow-anchor: none; }
+.timeline-scroll:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
+.timeline-range { color: var(--text-secondary); font-size: 12px; margin: 0; }
+.sidebar .brand:not(button) { cursor: default; }
 .timeline-header, .timeline-row { display: grid; grid-template-columns: 210px 1fr; }
-.timeline-header { position: sticky; top: 0; z-index: 5; background: var(--surface); border-bottom: 1px solid var(--border); }
-.timeline-label { position: sticky; left: 0; z-index: 3; background: var(--surface); border-right: 1px solid var(--border); padding: 12px; display: flex; flex-direction: column; justify-content: center; gap: 4px; min-width: 0; }
+.timeline-header { position: sticky; top: 0; z-index: 5; background: var(--surface-solid); border-bottom: 1px solid var(--border); }
+.timeline-label { position: sticky; left: 0; z-index: 3; background: var(--surface-solid); border-right: 1px solid var(--border); padding: 12px; display: flex; flex-direction: column; justify-content: center; gap: 4px; min-width: 0; }
 .timeline-label strong { font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }.timeline-label small { font-size: 10px; color: var(--text-secondary); }
 .timeline-axis { position: relative; height: 48px; }.timeline-axis span { position: absolute; padding: 15px 4px; font-size: 10px; white-space: nowrap; color: var(--text-secondary); }
 .timeline-node { position: sticky; left: 0; width: 100%; background: var(--surface-subtle); padding: 9px 12px; display: flex; gap: 12px; border-bottom: 1px solid var(--border); font-size: 12px; }.timeline-node strong { position: sticky; left: 12px; }.timeline-node small { position: sticky; left: 170px; color: var(--text-secondary); }
@@ -35,7 +38,7 @@
 .timeline-booking.is-mine { box-shadow: inset 0 0 0 1px var(--blue); }.timeline-booking.is-highlighted, .timeline-booking:focus-visible { outline: 2px solid var(--blue); outline-offset: 1px; z-index: 4; }
 .timeline-now { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--red); pointer-events: none; z-index: 4; }
 .timeline-mobile-list { display: none; }.timeline-mobile-booking { display: flex; flex-direction: column; width: 100%; text-align: left; gap: 6px; padding: 12px; border: 0; border-bottom: 1px solid var(--border); background: var(--surface); color: var(--text); }
-@media(max-width:760px) { .timeline-scroll { display: none; }.timeline-mobile-list { display: block; }.timeline-controls { gap: 5px; }.timeline-mobile-booking span, .timeline-mobile-booking small { font-size: 11px; color: var(--text-secondary); } }
+@media(max-width:760px) { .timeline-mobile-list { display: block; }.timeline-controls { gap: 5px; }.timeline-mobile-booking span, .timeline-mobile-booking small { font-size: 11px; color: var(--text-secondary); } }
 .timeline-slots { touch-action: none; }
 .timeline-grid.is-selecting { user-select: none; cursor: crosshair; }
 .timeline-selection { position: absolute; top: 3px; bottom: 3px; z-index: 7; background: color-mix(in srgb,var(--blue) 20%,transparent); outline: 2px solid var(--blue); pointer-events: none; border-radius: 4px; }

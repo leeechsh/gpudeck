@@ -1631,10 +1631,13 @@ function App() {
         <div className="sidebar__titlebar" onMouseDown={startWindowDrag} onDoubleClick={(event) => void toggleWindowMaximize(event)}>
           <div className="traffic-spacer" aria-hidden="true" />
           <div className="brand-row">
-            <button className="brand" onClick={() => { setShowAbout(true); void checkForUpdates(true) }} aria-label="关于 GPUDeck">
+            {hub ? <div className="brand" aria-label="GPUDeck">
               <span className="brand__mark"><Activity size={18} strokeWidth={2.4} /></span>
               <div><strong>GPUDeck</strong><small>协作式 GPU 资源管理</small></div>
-            </button>
+            </div> : <button className="brand" onClick={() => { setShowAbout(true); void checkForUpdates(true) }} aria-label="关于 GPUDeck">
+              <span className="brand__mark"><Activity size={18} strokeWidth={2.4} /></span>
+              <div><strong>GPUDeck</strong><small>协作式 GPU 资源管理</small></div>
+            </button>}
             {checkingUpdate && <span className="brand__update brand__update--checking" aria-label="正在检查更新"><RefreshCw className="spin" size={15} /></span>}
             {!checkingUpdate && shouldShowUpdateBadge(latestRelease?.version, ignoredUpdateVersion) && <button className="brand__update" onClick={() => void startAppUpdate()} aria-label={`下载并安装 GPUDeck ${latestRelease?.version}`} title={`更新到 GPUDeck ${latestRelease?.version}`}><CircleArrowUp size={16} /></button>}
           </div>
@@ -1766,7 +1769,7 @@ function App() {
       {projectConflictTarget && <ProjectConflictDialog project={projectConflictTarget.project} server={servers.find((item) => item.id === projectConflictTarget.targetServerId)} onClose={() => setProjectConflictTarget(null)} onConfirm={() => { const pending = projectConflictTarget; setProjectConflictTarget(null); void syncProjectTarget(pending.project, pending.targetServerId, true, true) }} />}
       {showSettings && settings && <SettingsSheet settings={settings} onboardingVisible={!onboardingDismissed} onClose={() => setShowSettings(false)} onSave={async (value, showOnboarding) => { setSettings(await api.saveSettings(value)); if (showOnboarding) { localStorage.removeItem(ONBOARDING_DISMISSED_KEY); setOnboardingDismissed(false); setOnboardingUseActualState(true); setOnboardingCollapsed(false); if (onboardingDismissed) setMainView('fleet') } else { localStorage.setItem(ONBOARDING_DISMISSED_KEY, 'true'); setOnboardingDismissed(true) } setShowSettings(false); setToast('设置已保存') }} />}
       {showActivityLog && <ActivityLogSheet servers={servers} snapshots={snapshots} onClose={() => setShowActivityLog(false)} />}
-      {showAbout && <AboutSheet latestRelease={latestRelease} checkingUpdate={checkingUpdate} updateError={updateCheckError} ignoredVersion={ignoredUpdateVersion} onIgnoreUpdate={(version) => { saveIgnoredUpdateVersion(version); setIgnoredUpdateVersion(version); setToast(`已忽略 v${version} 的更新提示`) }} onCheckUpdate={() => void checkForUpdates(true)} onClose={() => setShowAbout(false)} onNotice={setToast} />}
+      {showAbout && !hub && <AboutSheet latestRelease={latestRelease} checkingUpdate={checkingUpdate} updateError={updateCheckError} ignoredVersion={ignoredUpdateVersion} onIgnoreUpdate={(version) => { saveIgnoredUpdateVersion(version); setIgnoredUpdateVersion(version); setToast(`已忽略 v${version} 的更新提示`) }} onCheckUpdate={() => void checkForUpdates(true)} onClose={() => setShowAbout(false)} onNotice={setToast} />}
       {appUpdateState && <AppUpdateDialog state={appUpdateState} onClose={() => setAppUpdateState(null)} onRetry={() => {
         const previous = desktopUpdateRef.current
         desktopUpdateRef.current = null
