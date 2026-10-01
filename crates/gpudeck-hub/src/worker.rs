@@ -1,9 +1,15 @@
 use crate::{AppState, db::timestamp};
-use chrono::{Duration as ChronoDuration, FixedOffset, Utc};
+use chrono::{DateTime, Duration as ChronoDuration, FixedOffset, Utc};
 use serde_json::json;
 use sqlx::{Row, SqlitePool};
 use std::{sync::Arc, time::Duration};
 use uuid::Uuid;
+
+pub(crate) fn beijing_time(time: DateTime<Utc>) -> String {
+    time.with_timezone(&FixedOffset::east_opt(8 * 3600).unwrap())
+        .format("%Y-%m-%d %H:%M")
+        .to_string()
+}
 
 pub fn spawn(state: Arc<AppState>) {
     tokio::spawn(async move {
@@ -81,7 +87,10 @@ async fn enqueue_policy_events(state: &AppState) -> anyhow::Result<()> {
             "SELECT DISTINCT r.id,u.display_name,r.project_name,r.starts_at,u.wecom_user_id FROM reservations r JOIN users u ON u.id=r.owner_id JOIN reservation_allocations a ON a.reservation_id=r.id JOIN current_processes p ON p.gpu_id=a.gpu_id AND p.username=u.linux_username WHERE r.ends_at BETWEEN strftime('%Y-%m-%dT%H:%M:%fZ','now','-24 hours') AND strftime('%Y-%m-%dT%H:%M:%fZ','now') AND r.status='completed' AND p.sampled_at>strftime('%Y-%m-%dT%H:%M:%fZ','now','-2 minutes')",
         ),
     ];
-    let hour = Utc::now().format("%Y%m%d%H").to_string();
+    let now = Utc::now();
+    // Keep existing UTC dedupe keys. UTC+8 has the same natural-hour
+    // boundaries; renaming keys would resend events during an upgrade.
+    let hour = now.format("%Y%m%d%H").to_string();
     for (event, prefix, query) in queries {
         for row in sqlx::query(query).fetch_all(&mut *tx).await? {
             let id: Uuid = row.get("id");
@@ -90,10 +99,8 @@ async fn enqueue_policy_events(state: &AppState) -> anyhow::Result<()> {
             let start: chrono::DateTime<Utc> = row.get("starts_at");
             let text = match event {
                 "reservation.reminder" => format!(
-                    "预约即将开始：{project}（{}）",
-                    start
-                        .with_timezone(&FixedOffset::east_opt(8 * 3600).unwrap())
-                        .format("%m-%d %H:%M")
+                    "预约即将开始：{project}（北京时间 UTC+8：{}）",
+                    beijing_time(start)
                 ),
                 "reservation.no_show" => {
                     format!("预约开始 15 分钟仍未签到：{person} / {project}。预约不会自动释放。")
@@ -109,7 +116,7 @@ async fn enqueue_policy_events(state: &AppState) -> anyhow::Result<()> {
             };
             let mentioned: Option<String> = row.get("wecom_user_id");
             sqlx::query("INSERT INTO notification_outbox(id,event_type,dedupe_key,content,mentioned_user_ids) VALUES(?1,?2,?3,?4,?5) ON CONFLICT(dedupe_key) DO NOTHING")
-                .bind(Uuid::new_v4()).bind(event).bind(key).bind(format!("{text}\n{}",state.public_url)).bind(json!(mentioned.into_iter().collect::<Vec<_>>())).execute(&mut *tx).await?;
+                .bind(Uuid::new_v4()).bind(event).bind(key).bind(format!("{text}\n通知时间（北京时间 UTC+8）：{}\n{}",beijing_time(now),state.public_url)).bind(json!(mentioned.into_iter().collect::<Vec<_>>())).execute(&mut *tx).await?;
         }
     }
     let rows=sqlx::query("SELECT p.gpu_id,p.username,p.pid,n.name,g.display_index,u.wecom_user_id FROM current_processes p JOIN gpus g ON g.id=p.gpu_id JOIN nodes n ON n.id=g.node_id LEFT JOIN users u ON u.linux_username=p.username WHERE p.sampled_at>strftime('%Y-%m-%dT%H:%M:%fZ','now','-2 minutes') AND NOT EXISTS(SELECT 1 FROM reservation_allocations a JOIN reservations r ON r.id=a.reservation_id JOIN users ru ON ru.id=r.owner_id WHERE a.gpu_id=p.gpu_id AND r.status='active' AND a.starts_at<=strftime('%Y-%m-%dT%H:%M:%fZ','now') AND a.ends_at>strftime('%Y-%m-%dT%H:%M:%fZ','now') AND ru.linux_username=p.username) ORDER BY p.pid").fetch_all(&mut *tx).await?;
@@ -122,7 +129,7 @@ async fn enqueue_policy_events(state: &AppState) -> anyhow::Result<()> {
         let mentioned: Option<String> = row.get("wecom_user_id");
         sqlx::query("INSERT INTO notification_outbox(id,event_type,dedupe_key,content,mentioned_user_ids) VALUES(?1,'usage.unreserved',?2,?3,?4) ON CONFLICT(dedupe_key) DO NOTHING")
             .bind(Uuid::new_v4()).bind(format!("unreserved-{gpu}-{user}-{hour}"))
-            .bind(format!("检测到未预约使用：{user} 正在 {node} / GPU {index} 上运行 PID {pid}。系统仅通知，不会终止进程。\n{}",state.public_url))
+            .bind(format!("检测到未预约使用：{user} 正在 {node} / GPU {index} 上运行 PID {pid}。系统仅通知，不会终止进程。\n通知时间（北京时间 UTC+8）：{}\n{}",beijing_time(now),state.public_url))
             .bind(json!(mentioned.into_iter().collect::<Vec<_>>())).execute(&mut *tx).await?;
     }
     tx.commit().await?;
@@ -152,4 +159,22 @@ async fn retry(pool: &SqlitePool, id: Uuid, error: String, attempts: i32) -> any
     sqlx::query("UPDATE notification_outbox SET attempts=attempts+1,last_error=?2,next_attempt_at=?3 WHERE id=?1")
         .bind(id).bind(error).bind(timestamp(Utc::now()+ChronoDuration::seconds(delay))).execute(pool).await?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn notification_times_use_beijing_time_across_date_and_year_boundaries() {
+        for (utc, expected) in [
+            ("2026-10-01T07:30:00Z", "2026-10-01 15:30"),
+            ("2026-10-01T18:30:00Z", "2026-10-02 02:30"),
+            ("2026-12-31T16:00:00Z", "2027-01-01 00:00"),
+        ] {
+            let time = utc.parse::<DateTime<Utc>>().unwrap();
+            assert_eq!(beijing_time(time), expected);
+            assert_eq!(time.to_rfc3339_opts(chrono::SecondsFormat::Secs, true), utc);
+        }
+    }
 }

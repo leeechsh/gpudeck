@@ -399,6 +399,24 @@ async fn sqlite_settings_password_and_worker() {
     .await
     .unwrap();
     assert_eq!(count, 1);
+    let reminder: String = sqlx::query_scalar(
+        "SELECT content FROM notification_outbox WHERE event_type='reservation.reminder'",
+    )
+    .fetch_one(&f.state.pool)
+    .await
+    .unwrap();
+    assert!(reminder.contains(&format!(
+        "北京时间 UTC+8：{}",
+        worker::beijing_time(upcoming)
+    )));
+    assert!(reminder.contains("通知时间（北京时间 UTC+8）"));
+    let created: String = sqlx::query_scalar("SELECT content FROM notification_outbox WHERE event_type='reservation.created' ORDER BY created_at DESC LIMIT 1")
+        .fetch_one(&f.state.pool).await.unwrap();
+    assert!(created.contains(&format!(
+        "北京时间 UTC+8：{} 至 {}",
+        worker::beijing_time(upcoming),
+        worker::beijing_time(upcoming + Duration::hours(1))
+    )));
     let seconds: i64 = sqlx::query_scalar("SELECT active_seconds FROM usage_hours")
         .fetch_one(&f.state.pool)
         .await

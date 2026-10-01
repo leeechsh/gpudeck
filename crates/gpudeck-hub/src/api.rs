@@ -335,8 +335,12 @@ async fn create_reservation(
         "reservation.created",
         &format!("reservation-created-{id}"),
         &format!(
-            "{} 创建预约：{}（{} 至 {}）\n{}",
-            user.display_name, input.project_name, input.starts_at, input.ends_at, state.public_url
+            "{} 创建预约：{}（北京时间 UTC+8：{} 至 {}）\n{}",
+            user.display_name,
+            input.project_name,
+            crate::worker::beijing_time(input.starts_at),
+            crate::worker::beijing_time(input.ends_at),
+            state.public_url
         ),
         user.wecom_user_id.clone(),
     )
