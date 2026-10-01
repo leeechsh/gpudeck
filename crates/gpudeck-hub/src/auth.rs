@@ -97,7 +97,16 @@ fn password_setup_path(path: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::password_setup_path;
+    use super::{password_setup_path, valid_password_length};
+
+    #[test]
+    fn password_minimum_is_eight() {
+        assert!(!valid_password_length("1234567"));
+        assert!(valid_password_length("12345678"));
+        assert!(valid_password_length("123456789"));
+        assert!(!valid_password_length("中文密码"));
+        assert!(valid_password_length("中文密码八个字符"));
+    }
 
     #[test]
     fn only_password_setup_routes_are_available_before_password_change() {
@@ -147,13 +156,18 @@ pub async fn bootstrap_admin(pool: &PgPool) -> anyhow::Result<()> {
             std::fs::read_to_string(path)?.trim().to_string()
         }
     };
-    if password.len() < 12 {
-        anyhow::bail!("bootstrap password must contain at least 12 characters");
+    if !valid_password_length(&password) {
+        anyhow::bail!("bootstrap password must contain at least 8 characters");
     }
     let password_hash = hash_password(&password)?;
     sqlx::query("INSERT INTO users(id,username,display_name,linux_username,password_hash,role) VALUES($1,$2,$2,$2,$3,'admin')")
         .bind(Uuid::new_v4()).bind(username).bind(password_hash).execute(pool).await?;
     Ok(())
+}
+
+pub fn valid_password_length(password: &str) -> bool {
+    // Match HTML minlength rather than counting UTF-8 bytes.
+    password.encode_utf16().count() >= 8
 }
 
 pub fn hash_password(password: &str) -> anyhow::Result<String> {

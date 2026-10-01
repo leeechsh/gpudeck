@@ -152,10 +152,10 @@ async fn change_password(
     Json(input): Json<ChangePassword>,
 ) -> Result<StatusCode, ApiError> {
     user.require_csrf(&headers)?;
-    if input.new_password.len() < 12 {
+    if !auth::valid_password_length(&input.new_password) {
         return Err(ApiError(
             StatusCode::UNPROCESSABLE_ENTITY,
-            "新密码至少12字符".into(),
+            "新密码至少8字符".into(),
         ));
     }
     let hash: String = sqlx::query_scalar("SELECT password_hash FROM users WHERE id=$1")
@@ -690,10 +690,10 @@ async fn create_user(
 ) -> Result<(StatusCode, Json<Value>), ApiError> {
     admin.require_admin()?;
     admin.require_csrf(&headers)?;
-    if input.password.len() < 12 {
+    if !auth::valid_password_length(&input.password) {
         return Err(ApiError(
             StatusCode::UNPROCESSABLE_ENTITY,
-            "密码至少12字符".into(),
+            "密码至少8字符".into(),
         ));
     }
     let role = input.role.unwrap_or_else(|| "user".into());
