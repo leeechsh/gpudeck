@@ -34,6 +34,8 @@ it.each(['admin', 'member'] as const)('handles an empty fleet for %s without exp
   root = createRoot(host)
   await act(async () => root?.render(<HubProvider user={user} onLogout={() => {}}><App /></HubProvider>))
   expect(host.textContent).toContain('连接第一台服务器')
+  expect(host.querySelector('button[aria-label="关于 GPUDeck"]')).toBeNull()
+  expect(host.querySelector('div.brand[aria-label="GPUDeck"]')).not.toBeNull()
   const admin = [...host.querySelectorAll('button')].find(button => button.textContent === '管理面板')
   if (role !== 'admin') {
     expect(admin).toBeUndefined()
