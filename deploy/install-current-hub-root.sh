@@ -9,6 +9,11 @@ web=deploy-gpudeck-web-1
 [[ -x "$binary" && -r "$repo/deploy/.env" ]] || { echo 'Build standalone Hub first; deploy/.env is required.' >&2; exit 1; }
 [[ ! -e /var/lib/gpudeck/gpudeck.sqlite && ! -e /etc/gpudeck/hub.env ]] || { echo 'Existing standalone installation detected; refusing to overwrite data/config.' >&2; exit 1; }
 for tool in docker curl systemctl getent install; do command -v "$tool" >/dev/null; done
+# sudo drops DOCKER_HOST. Pin every operation, including rollback, to the
+# shared daemon hosting this server's Compose deployment, not root's default.
+docker_endpoint=${1:-unix:///home/metaiot/docker-shared/docker.sock}
+docker() { command docker --host "$docker_endpoint" "$@"; }
+echo "Source Docker endpoint: $docker_endpoint"
 [[ $(docker inspect -f '{{.State.Running}}' "$hub") == true ]]
 [[ $(docker inspect -f '{{.State.Running}}' "$web") == true ]]
 "$binary" --version

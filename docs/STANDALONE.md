@@ -30,6 +30,8 @@ sudo bash /home/leeechsh/Workspace/gpudeck/deploy/install-current-hub-root.sh
 
 此脚本仅针对当前 Compose 容器 `deploy-gpudeck-hub-1`、`deploy-gpudeck-web-1`，拒绝覆盖已有独立安装。先安装文件、检查容器，再停写、执行 SQLite `.backup`、复制完整数据库并启动 systemd；启动健康检查失败会重新启动原 Docker 服务。首次切换期间有短暂中断。
 
+脚本默认显式连接当前服务器的共享 Docker socket `unix:///home/metaiot/docker-shared/docker.sock`，避免 sudo 丢弃 `DOCKER_HOST` 后误连系统 Docker。其他部署可将 Docker endpoint 作为第一个参数传入；所有备份、停容器和回退操作使用同一 endpoint。
+
 - 服务：`gpudeck-hub.service`，非 root 用户 `gpudeck`。
 - 程序：`/usr/local/bin/gpudeck-hub`。
 - 数据：`/var/lib/gpudeck/gpudeck.sqlite`，包括账号密码、会话、预约、节点与统计。
