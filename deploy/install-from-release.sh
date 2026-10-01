@@ -4,17 +4,18 @@ set -euo pipefail
 component=''
 version=latest
 check=false
+download_prefix=''
 installer_args=()
 usage() {
-    echo 'Usage: sudo bash install-from-release.sh --component hub|agent [--version latest|vX.Y.Z] [--check] [installer options]'
+    echo 'Usage: sudo bash install-from-release.sh --component hub|agent [--version latest|vX.Y.Z] [--download-prefix https://gh-proxy.com/] [--check] [installer options]'
     echo 'Hub: --listen IP:PORT --public-url URL --admin NAME'
     echo 'Agent: --config /absolute/path/node.env --hub-url URL'
 }
 while [[ $# -gt 0 ]]; do
     case "$1" in
-        --component|--version)
+        --component|--version|--download-prefix)
             [[ $# -ge 2 ]] || { usage; exit 1; }
-            case "$1" in --component) component=$2;; --version) version=$2;; esac
+            case "$1" in --component) component=$2;; --version) version=$2;; --download-prefix) download_prefix=$2;; esac
             shift 2;;
         --listen|--public-url|--admin|--config|--hub-url)
             [[ $# -ge 2 ]] || { usage; exit 1; }
@@ -25,6 +26,11 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 [[ "$component" == hub || "$component" == agent ]] || { usage; exit 1; }
+if [[ -n "$download_prefix" ]]; then
+    [[ "$download_prefix" == https://gh-proxy.com || "$download_prefix" == https://gh-proxy.com/ ]] || { echo 'Supported download prefix: https://gh-proxy.com/' >&2; exit 1; }
+    download_prefix=https://gh-proxy.com/
+    echo 'Using third-party GitHub download proxy: https://gh-proxy.com/'
+fi
 [[ "$version" == latest || "$version" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo 'Version must be latest or vX.Y.Z.' >&2; exit 1; }
 [[ $(uname -s) == Linux ]] || { echo 'Only Linux is supported.' >&2; exit 1; }
 case $(uname -m) in x86_64|amd64) arch=x86_64;; aarch64|arm64) arch=aarch64;; *) echo 'Unsupported CPU architecture; expected x86-64 or ARM64.' >&2; exit 1;; esac
@@ -37,7 +43,7 @@ repo=leeechsh/gpudeck
 api="https://api.github.com/repos/$repo/releases"
 if [[ "$version" == latest ]]; then api+='/latest'; else api+="/tags/$version"; fi
 curl_args=(--fail --show-error --silent --location --retry 3 --connect-timeout 15 --max-time 300 --proto '=https' --proto-redir '=https')
-if ! curl "${curl_args[@]}" "$api" -o "$task_dir/release.json"; then
+if ! curl "${curl_args[@]}" "${download_prefix}${api}" -o "$task_dir/release.json"; then
     echo "Unable to fetch published release $version. Tags/Actions artifacts are not downloadable Releases; check GitHub Releases and connectivity." >&2
     exit 1
 fi
@@ -50,7 +56,7 @@ checksum="SHA256SUMS-$number-linux-$arch"
 for name in "$archive" "$checksum"; do
     url=$(jq -er --arg name "$name" '[.assets[] | select(.name == $name)] | select(length == 1) | .[0].browser_download_url' "$task_dir/release.json") || { echo "Release $tag has no matching asset: $name" >&2; exit 1; }
     [[ "$url" == "https://github.com/$repo/releases/download/$tag/$name" ]] || { echo 'Unexpected asset download URL.' >&2; exit 1; }
-    curl "${curl_args[@]}" "$url" -o "$task_dir/$name"
+    curl "${curl_args[@]}" "${download_prefix}${url}" -o "$task_dir/$name"
 done
 expected=$(awk -v name="$archive" '$2 == name {print $1}' "$task_dir/$checksum")
 [[ "$expected" =~ ^[0-9a-fA-F]{64}$ ]] || { echo 'Missing or invalid bundle checksum.' >&2; exit 1; }

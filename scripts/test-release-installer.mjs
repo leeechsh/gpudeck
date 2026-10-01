@@ -18,6 +18,8 @@ url=''; output=''
 while [[ $# -gt 0 ]]; do
 case "$1" in -o) output=$2;shift 2;; https://*) url=$1;shift;; *) shift;; esac
 done
+echo "$url" >> "$TEST_FIXTURES/downloads"
+url=\${url#https://gh-proxy.com/}
 if [[ "$url" == https://api.github.com/* ]]; then cp "$TEST_FIXTURES/release.json" "$output"; else cp "$TEST_FIXTURES/$(basename "$url")" "$output"; fi
 `,{mode:0o700})
   for(const arch of ['x86_64','aarch64']){
@@ -27,15 +29,27 @@ if [[ "$url" == https://api.github.com/* ]]; then cp "$TEST_FIXTURES/release.jso
   }
   let count=0
   const run=(arch,success,extra=[])=>{
+    fs.writeFileSync(path.join(dir,'downloads'),'')
     const result=cp.spawnSync('bash',['deploy/install-from-release.sh','--component','hub','--check',...extra],{env:{...process.env,PATH:bin+':'+process.env.PATH,TEST_ARCH:arch,TEST_FIXTURES:dir},encoding:'utf8'})
     assert.equal(result.status===0,success,result.stdout+result.stderr)
     if(success)assert.match(result.stdout,/validated installer args/)
+    if(success && extra.includes('--download-prefix')) {
+      const urls=fs.readFileSync(path.join(dir,'downloads'),'utf8').trim().split('\n')
+      assert.equal(urls.length,3)
+      assert.ok(urls.every(url=>url.startsWith('https://gh-proxy.com/https://')))
+      assert.match(urls[0], /\/https:\/\/api.github.com\//)
+      assert.doesNotMatch(result.stdout.split('validated installer args:')[1], /download-prefix/)
+    }
     count++
   }
   const assets=[]
   for(const arch of ['x86_64','aarch64'])for(const name of [`gpudeck-9.8.7-linux-${arch}.tar.gz`,`SHA256SUMS-9.8.7-linux-${arch}`])assets.push({name,browser_download_url:`https://github.com/${repo}/releases/download/${tag}/${name}`})
   const meta={tag_name:tag,draft:false,assets}
   fs.writeFileSync(path.join(dir,'release.json'),JSON.stringify(meta))
+  run('x86_64',true,['--download-prefix','https://gh-proxy.com/'])
+  run('aarch64',true,['--download-prefix','https://gh-proxy.com'])
+  run('x86_64',false,['--download-prefix','http://gh-proxy.com/'])
+  run('x86_64',false,['--download-prefix','https://gh-proxy.com.evil/'])
   run('x86_64',true);run('aarch64',true);run('arm64',true,['--version',tag]);run('riscv64',false);run('x86_64',false,['--version','v1.0.0'])
   fs.writeFileSync(path.join(dir,'SHA256SUMS-9.8.7-linux-x86_64'),'0'.repeat(64)+'  gpudeck-9.8.7-linux-x86_64.tar.gz\n')
   run('x86_64',false)

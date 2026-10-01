@@ -104,6 +104,15 @@ Hub 约 5 秒后应显示节点在线。Agent 服务进程运行不等于凭据�
 
 ### 更新已有服务
 
+GitHub 直连超时时，安装和更新脚本均可加 `--download-prefix https://gh-proxy.com/`，Release API、附件及 SHA-256 清单都会经加速站访问。不加参数仍直连 GitHub。只支持这一指定 HTTPS 前缀，不向加速站发送节点 Token。第三方同时提供附件和校验清单，校验不等同于独立签名认证。
+
+```bash
+sudo bash install-from-release.sh --component agent \
+  --config /absolute/path/node.env --hub-url https://gpudeck.cslee.cc \
+  --download-prefix https://gh-proxy.com/
+sudo bash update-from-release.sh --component hub --download-prefix https://gh-proxy.com/
+```
+
 在已安装的服务器下载 `deploy/update-from-release.sh`（随包含此功能的分支合并 main 后可使用以下链接）：
 
 ```bash
