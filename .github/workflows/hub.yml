@@ -45,6 +45,7 @@ jobs:
       - run: npm test
       - run: node scripts/test-fresh-installers.mjs
       - run: node scripts/test-release-installer.mjs
+      - run: node scripts/test-release-updater.mjs
       - run: node scripts/test-server-release.mjs
       - run: bash deploy/build-server-bundle.sh
       - run: cargo test --locked --workspace

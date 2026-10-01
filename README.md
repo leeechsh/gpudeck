@@ -86,6 +86,8 @@ GPU 节点需安装 NVIDIA 驱动，并能够运行 `nvidia-smi`；Hub URL 必�
 
 完整步骤及故障排查：[新服务器快速部署](docs/QUICKSTART.md)。
 
+已有 systemd 部署可使用 `deploy/update-from-release.sh --component hub` 或 `--component agent` 更新到最新公开 Release；支持 `--version vX.Y.Z` 和仅校验的 `--check`。脚本自动识别架构、校验下载文件，保留配置并在更新失败时恢复旧程序。Hub 停止服务后备份 SQLite，数据库不自动回滚。详见 [更新已有服务](docs/QUICKSTART.md#更新已有服务)。
+
 ## 用户与预约规则
 
 - 普通账号可由 Agent 上报的 Linux 用户同步生成：登录名为系统用户名，初始密码为“用户名@123456”，首次登录必须修改。

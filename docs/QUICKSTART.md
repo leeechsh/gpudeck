@@ -100,4 +100,21 @@ sudo journalctl -u gpudeck-agent -n 30 --no-pager
 
 Hub 约 5 秒后应显示节点在线。Agent 服务进程运行不等于凭据认证成功，应以 Hub 在线状态及日志为准。若某些进程受 `/proc` 隐私配置限制，Agent 可能无法采集完整用户进程。
 
-两个安装脚本均支持 `--check` 做无写入的参数检查，支持 `--binary PATH` 指定单独拷贝的程序；脚本旁需要保留对应 `.service` 文件。拒绝覆盖已有程序、数据库、配置或服务；安装失败保留文件供排查，不自动删除数据。已有部署升级参见 `STANDALONE.md`，不要重复执行首次安装。
+两个安装脚本均支持 `--check` 做无写入的参数检查，支持 `--binary PATH` 指定单独拷贝的程序；脚本旁需要保留对应 `.service` 文件。拒绝覆盖已有程序、数据库、配置或服务；安装失败保留文件供排查，不自动删除数据。已有部署不要重复执行首次安装。
+
+### 更新已有服务
+
+在已安装的服务器下载 `deploy/update-from-release.sh`（随包含此功能的分支合并 main 后可使用以下链接）：
+
+```bash
+curl -fL https://raw.githubusercontent.com/leeechsh/gpudeck/main/deploy/update-from-release.sh -o update-from-release.sh
+sudo bash update-from-release.sh --component hub
+# 或在 GPU 服务器更新 Agent：
+sudo bash update-from-release.sh --component agent
+```
+
+默认更新到最新公开 Release；指定版本可加 `--version v2.12.0`，该版本必须已经发布。仅下载和校验、不改服务可加 `--check`。需要 curl、jq、gzip、sha256sum、timeout 和 flock，兼容 Linux/glibc 与 systemd。
+
+Hub 使用 `/etc/gpudeck/hub.env` 中的监听地址执行健康检查，`0.0.0.0` 自动换为 `127.0.0.1`；IPv6/自定义地址可传 `--health-url http://127.0.0.1:37935/healthz`。只支持标准程序路径、服务和 SQLite 数据地址，不修改配置、节点 Token 或服务定义。
+
+Hub 在服务停止后备份 SQLite 主文件和 WAL/SHM，备份保留于打印的 `/var/lib/gpudeck-hub-update.*` 私有目录。失败时恢复旧程序；数据库不自动恢复，如新版执行过迁移须审查备份后手动恢复。Agent 仅检查进程稳定，更新后须在 Hub 核对最新遥测。

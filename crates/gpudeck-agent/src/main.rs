@@ -8,6 +8,10 @@ use uuid::Uuid;
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> anyhow::Result<()> {
+    if env::args().any(|arg| arg == "--version") {
+        println!("gpudeck-agent {}", env!("CARGO_PKG_VERSION"));
+        return Ok(());
+    }
     tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env()
