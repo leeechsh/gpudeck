@@ -1,141 +1,153 @@
 <div align="right">
-  🌐 Language:
-  <kbd><strong>✔简体中文</strong></kbd>
-  <a href="./README_EN.md"><kbd>English</kbd></a>
+
+简体中文 · [English](README_EN.md)
+
 </div>
 
-<h1 align="center">GPUDeck</h1>
+# GPUDeck
 
-<p align="center"><strong>Collaborative GPU Resource Management for Research Labs and AI Teams</strong></p>
+**Collaborative GPU Resource Management for Research Labs and AI Teams**
 
-<p align="center">
-  <img src="docs/assets/readme/gpudeck-icon.png" alt="GPUDeck macOS Logo" width="300" />
-</p>
+面向研究实验室与 AI 团队的协作式 GPU 资源管理平台。将多台服务器的 GPU 状态、人员占用、预约日历和使用统计集中到一个 Web 门户，无需部署 Slurm。
 
-<h2 align="center">研究实验室与 AI 团队的协作式 GPU 资源管理平台</h2>
+当前开发版本：**v2.9.1**。仓库：[leeechsh/gpudeck](https://github.com/leeechsh/gpudeck)。许可证：[GPL-3.0](LICENSE)。
 
-<p align="center">
-  📊 查看算力、🔄 同步项目、🚀 启动任务，📈 并持续掌握运行状态。
-</p>
+## 能做什么
 
-<p align="center">
-GPUDeck 将分散在多台 Linux 服务器上的 GPU 状态、预约日历、团队身份、使用统计、远程终端和训练工作流集中到一个平台，无需部署 Slurm。
-</p>
+- **中央资源看板**：查看节点在线状态、GPU 利用率、显存、温度及 GPU 进程。
+- **人员占用总览**：按占用 GPU 数量查看用户，并查看空闲卡总数和各型号可用数量；实际占用与预约分开呈现。
+- **GPU 预约日历**：横向时间轴、纵向 GPU，支持点击和拖动选择时段及多张卡；支持当前半小时窗口，时间选择为 24 小时制。
+- **预约冲突提醒**：检查同卡时间重叠、用户并发上限、不可用 GPU，并提示离线节点和实际占用风险；后端同步校验。
+- **用户与管理员**：节点注册、Linux 用户同步、首次登录改密，以及全局并发 GPU 上限设置。
+- **我的进程**：按登录账号关联的 Linux 用户名查看已接入节点上的 GPU 进程。
+- **通知与统计**：支持配置企业微信群机器人，提供预约相关提醒和 GPU 使用统计。
 
-<p align="center">
-  <a href="https://github.com/leeechsh/gpudeck/releases/latest"><img src="https://img.shields.io/github/v/release/leeechsh/gpudeck?style=flat-square&logo=github&label=release" alt="Release"></a>
-  <a href="https://github.com/leeechsh/gpudeck/stargazers"><img src="https://img.shields.io/github/stars/leeechsh/gpudeck?style=flat-square&logo=github&label=stars" alt="GitHub Stars"></a>
-  <img src="https://img.shields.io/badge/platform-macOS%20%7C%20Windows-1687b8?style=flat-square" alt="Platform">
-  <a href="https://github.com/leeechsh/gpudeck/releases"><img src="https://img.shields.io/github/downloads/leeechsh/gpudeck/total?style=flat-square&logo=github&label=downloads" alt="Downloads"></a>
-  <a href="https://github.com/leeechsh/gpudeck/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-GPL--3.0-green?style=flat-square" alt="GPL-3.0 License"></a>
-</p>
+GPUDeck 是**协作式预约系统，不是作业调度器**：预约不会分配 CUDA 设备、锁定显卡，也不会启动、暂停或终止用户进程。用户仍通过 SSH 或现有工具运行任务；未按预约使用资源只能被观察、标记和通知。
 
+## 组件与部署方式
 
+| 组件 | 职责 | 运行位置 |
+| --- | --- | --- |
+| gpudeck-web | React/TypeScript Web 界面，构建后内嵌到 Hub | 用户浏览器 |
+| gpudeck-hub | Rust/Axum API、身份、预约、通知与 SQLite | 一台中央服务器 |
+| gpudeck-agent | 只读采集 GPU、进程及可登录 Linux 用户，每 5 秒上报 | 每台 GPU 服务器 |
 
-<p align="center">
-  <img src="docs/assets/readme/fleet-overview.png" alt="全局算力总览" width="33%">
-  <img src="docs/assets/readme/history-heatmap.png" alt="资源历史热力图" width="33%">
-  <img src="docs/assets/readme/idle-compute.png" alt="空闲算力筛选" width="33%">
-</p>
+推荐 **单可执行文件 + systemd + SQLite**：运行服务器无需 Docker、Node.js、Rust 或 PostgreSQL。Web 与 API 由同一个 Hub 进程提供；数据仍保存在外部 SQLite 文件中。Docker 部署保留为可选方案。
 
+本仓库仍包含继承自 RackTop 的 Tauri 桌面代码，但其 SSH 终端、项目同步和任务启动能力不应视为当前 Hub 的功能，也不作为下面部署流程的依赖。
 
-## 下载
+## 快速部署到新服务器
 
-当前开发版：**v2.9.0**。新服务器可使用 [Hub 与 Agent 快速部署](docs/QUICKSTART.md)，已有服务器参见 [单可执行文件 / systemd 部署](docs/STANDALONE.md)；桌面安装包将在 [GitHub Releases](https://github.com/leeechsh/gpudeck/releases) 发布。
+### 1. 构建部署包
 
-## 作者的话
-
-实验室服务器越来越多以后，项目之间的同步、任务运行和服务器状态查看会变得越来越麻烦。把这些事情交给 AI 做，往往又会浪费不少 token 和时间，所以我决定开发 GPUDeck，把这些重复的操作收进一个真正可操作的工具里。
-
-当然，开发这个 App 的过程本身也花了很多 token，笑死。至少现在，下一次启动任务时不用再从头解释一遍服务器、项目和命令了。
-
-## 主要功能
-
-- **多服务器算力总览**：集中查看 GPU、CPU、系统内存、温度、利用率和进程状态，并按服务器与 GPU 快速定位资源。
-- **空闲算力发现**：按显存、利用率、占用状态和持续空闲时间筛选可用 GPU，直接打开远程终端或进入启动任务流程。
-- **远程终端**：通过 SSH 打开服务器终端，适合临时检查环境、查看文件和处理启动前问题。
-- **项目资料管理**：按项目管理工作目录，并关联数据集和模型；支持跨服务器检查状态、同步副本和补齐缺失资料。
-- **启动配置与任务管理**：保存项目级启动配置，在不同服务器和 GPU 上切换工作目录、GPU 卡号、Shell 命令、超参数和日志路径，再统一启动和监测任务。
-- **运行状态与历史**：查看 GPUDeck 任务和外部进程、日志、资源监测、历史热力图，以及离线、高温、空闲和进程退出通知。
-- **安全连接**：支持 SSH Agent、密钥、密码、`~/.ssh/config`、ProxyJump 和 Host Key 指纹核验，不自动接受未知主机。
-
-
-## 安全与数据
-
-- Host Key 未确认时不会自动接受；指纹变化会阻止连接。
-- 密码不会写入命令行、日志或 SQLite，只保存在会话内存或系统钥匙串。
-- GPUDeck 不会自动执行 `sudo` 或未经确认修改远程服务器。
-- 服务器、项目、数据集、模型、启动配置和历史数据保存在本机应用数据目录；卸载应用通常不会自动删除这些数据，如需彻底清理请先在应用设置中导出或删除，再按操作系统清理应用数据目录。
-
-## 开发者说明
-
-GPUDeck 使用 Tauri 2、React、TypeScript、Rust 和 SQLite 构建。开发环境需要 Node.js 20+、Rust stable 和系统 OpenSSH。
+在 Linux 构建机安装 Node.js/npm、Rust 和 C 编译器，然后执行：
 
 ```bash
-npm install
-npm run dev
-npm run tauri dev
+git clone https://github.com/leeechsh/gpudeck.git
+cd gpudeck
+npm ci
+bash deploy/build-server-bundle.sh
 ```
 
-运行前端构建和 Rust 测试：
+部署包输出到 `target/server-bundles/`，包含 Hub、Agent、首次安装脚本、systemd 服务文件和部署说明，不含凭据或数据库。
+
+将包复制到目标服务器并解压，进入解压目录。目标主机须使用兼容的 CPU 架构和 Linux/glibc；这不是任意平台通用的完全静态二进制。
+
+### 2. 安装 Hub
+
+以下为可信内网或 Tailscale 示例，将地址替换为新 Hub 的实际 IP：
 
 ```bash
+sudo bash deploy/install-hub.sh \
+  --listen 100.100.100.10:37935 \
+  --public-url http://100.100.100.10:37935 \
+  --admin admin
+```
+
+脚本交互读取初始管理员密码，创建独立服务用户、SQLite 数据目录及 systemd 服务，拒绝覆盖已有部署。默认没有管理员密码，首次安装须输入至少 8 个可打印 ASCII 字符。
+
+公网访问应配置 HTTPS 反向代理，并使用 `--public-url https://你的域名`；HTTPS URL 会启用 Secure Cookie。脚本不配置 DNS、证书、FRP、防火墙或 Tailscale。
+
+### 3. 接入 Agent
+
+管理员登录 Hub，在“管理面板 → 注册服务器节点”为每台服务器独立注册，下载节点 `.env` 并复制到对应 GPU 服务器。Token 仅显示一次，不能共用节点身份。
+
+在 GPU 服务器的解压目录执行：
+
+```bash
+sudo bash deploy/install-agent.sh \
+  --config /absolute/path/node.env \
+  --hub-url http://100.100.100.10:37935
+```
+
+GPU 节点需安装 NVIDIA 驱动，并能够运行 `nvidia-smi`；Hub URL 必须从节点可达。约 5 秒后在 Hub 确认节点在线。
+
+完整步骤及故障排查：[新服务器快速部署](docs/QUICKSTART.md)。
+
+## 用户与预约规则
+
+- 普通账号可由 Agent 上报的 Linux 用户同步生成：登录名为系统用户名，初始密码为“用户名@123456”，首次登录必须修改。
+- 用户新密码至少 8 个字符；首次 Hub 管理员密码由安装者设置，不使用上述默认规则。
+- 每次预约最多 48 小时，最早可从当前半小时窗口开始，最晚在未来 14 天内开始；结束时间须晚于当前时间。
+- 同一张卡的重叠时段不可预约，结束与开始边界相接不算冲突。
+- 默认并发上限为 2 张 GPU；管理员可通过全局设置统一调整所有用户，新账号继承该设置。
+- “实际空闲”不等于“时段未预约”，实际进程占用与预约冲突是不同概念。
+
+## 安全、持久化与运维
+
+- Hub 密码使用 Argon2 哈希，采用服务端会话及 CSRF 校验；节点使用独立 Token 身份。
+- HTTPS 部署使用 Secure Cookie；启用后浏览器无法通过普通 HTTP 完成会话登录。Agent 使用 Token，不依赖浏览器 Cookie。
+- Hub 与 Agent systemd 服务均以专用非 root 用户运行；安装服务需要 sudo。
+- Hub 数据默认位于 `/var/lib/gpudeck/gpudeck.sqlite`，配置位于 `/etc/gpudeck/hub.env`；Agent 配置位于 `/etc/gpudeck-agent.env`。
+- 数据库及备份含账号、会话和节点相关敏感信息，须限制权限并保存在独立存储。不要直接复制正在写入的 SQLite 主文件；应使用 SQLite 在线备份或停写后完整备份。
+- 当前 SQLite Hub 按单实例部署；不要将同一数据库文件用于多实例或放在共享网络文件系统上。
+
+查看运行状态：
+
+```bash
+sudo systemctl status gpudeck-hub
+sudo journalctl -u gpudeck-hub -n 50 --no-pager
+sudo systemctl status gpudeck-agent
+sudo journalctl -u gpudeck-agent -n 50 --no-pager
+```
+
+现有部署的升级、历史 Docker 迁移和回退参见 [单文件部署说明](docs/STANDALONE.md)。其中 `*-current-*` 脚本针对已有当前服务器，不是通用的新服务器安装入口。
+
+## 开发与验证
+
+```bash
+npm ci
+npm test
 npm run build
-cargo test --manifest-path src-tauri/Cargo.toml
+cargo test --locked --workspace
+node scripts/test-fresh-installers.mjs
+bash -n deploy/*.sh
 ```
 
-本地打包：
+编译 Hub 前必须先构建 Web。构建两个服务器程序及部署包：
 
 ```bash
-npm run tauri build
+bash deploy/build-server-bundle.sh
 ```
 
-macOS 的应用和 DMG 会输出到 `src-tauri/target/release/bundle/`。GitHub Actions 会分别构建 macOS 和 Windows 安装包。
+启动前端开发预览，并将 API 代理到本地运行的 Hub：
 
-## 产品说明书
+```bash
+VITE_HUB_PROXY_TARGET=http://127.0.0.1:37935 npm run dev
+```
 
-### 1. 添加服务器
+默认预览端口为 1420；代理不会绕过 Hub 身份验证。首次启动 Hub 需配置数据库地址、监听地址及初始化管理员密码，详见 [单文件部署说明](docs/STANDALONE.md)。
 
-第一次使用时，从“添加服务器”开始。填写 SSH 地址、端口和登录用户，按需要选择 SSH Agent、密钥或密码，并完成 Host Key 核验。GPUDeck 会通过 SSH 读取服务器资源，不需要在服务器安装额外服务。
+## 文档与发布状态
 
-![添加 SSH 服务器](docs/assets/readme/add-server.png)
+- [新服务器快速部署](docs/QUICKSTART.md)
+- [单文件部署、升级与迁移](docs/STANDALONE.md)
+- [Docker 部署及预约配置](docs/DEPLOYMENT.md)
+- [详细版本记录](docs/VERSION_INFOS.md)
+- [简明更新说明](docs/Version_overview.md)
 
-### 2. 查看服务器与 GPU 状态
+仓库标签与 GitHub Release 是不同交付物。当前可从源码构建 Linux 部署包；不承诺每个版本已发布可下载附件或验证过 macOS/Windows 桌面安装包。以 [GitHub Releases](https://github.com/leeechsh/gpudeck/releases) 实际附件为准。
 
-总览页按服务器展示 GPU 数量、GPU 显存、系统内存和在线状态。进入服务器后，可以查看每张 GPU 的利用率、显存、温度、当前进程和 CPU 状态；点击卡片可以继续查看细节。
+## 致谢与许可证
 
-![服务器概览](docs/assets/readme/overview.png)
-
-![全局算力总览](docs/assets/readme/fleet-overview.png)
-
-### 3. 使用远程终端
-
-需要临时检查环境时，打开对应服务器的远程终端。终端复用已配置的 SSH 连接，适合执行检查命令、确认目录、验证 Python 环境或排查任务启动问题。
-
-![远程终端](docs/assets/readme/terminal.png)
-
-### 4. 发现空闲算力
-
-在“空闲算力”中按 GPU 使用情况、可用显存和是否有进程占用筛选资源。点击启动按钮会进入启动任务，点击终端按钮只打开远程终端，不会改变任务配置。
-
-![空闲算力筛选](docs/assets/readme/idle-compute.png)
-
-### 5. 查看资源历史
-
-资源历史以热力图展示近期 GPU 使用情况，时间坐标固定在左侧并随窗口自适应。它适合快速判断一台服务器什么时候繁忙、哪些 GPU 长时间空闲，以及任务运行是否出现异常波动。
-
-![资源历史热力图](docs/assets/readme/history-heatmap.png)
-
-### 6. 管理项目、数据集和模型
-
-项目是长期管理的核心。为项目关联数据集和模型后，GPUDeck 会检查它们在目标服务器上的路径和副本状态；需要在另一台服务器运行时，可以从同步弹窗查看缺失项并执行同步或补齐。一个数据集或模型可以被多个项目关联。
-
-![项目、数据集和模型同步](docs/assets/readme/sync-dialog.png)
-
-### 7. 创建启动任务
-
-启动配置按项目保存。同一套超参数可以针对不同服务器切换工作目录、GPU 卡号和运行命令；粘贴已有命令时，GPUDeck 会识别其中的 `cd`、`CUDA_VISIBLE_DEVICES` 和项目日志路径，并在启动前生成预览。未提供项目日志路径时，GPUDeck 使用自己的受管日志路径，便于在任务页统一查看日志。
-
-![启动任务](docs/assets/readme/launch-task.png)
-
-启动后可以在“我的进程”中查看任务状态、日志和资源占用，并安全结束任务或外部进程。
+GPUDeck 的界面与桌面基础源自 [Tongzh-SEU/RackTop](https://github.com/Tongzh-SEU/RackTop)，在此基础上增加中央 Hub、Agent、团队身份与协作式 GPU 预约。保留上游贡献与许可证要求，采用 [GPL-3.0](LICENSE)。

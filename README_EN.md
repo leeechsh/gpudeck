@@ -1,138 +1,152 @@
 <div align="right">
-  🌐 Language:
-  <a href="./README.md"><kbd>简体中文</kbd></a>
-  <kbd><strong>✔ English</strong></kbd>
+
+[简体中文](README.md) · English
+
 </div>
 
-<h1 align="center">GPUDeck</h1>
+# GPUDeck
 
-<p align="center"><strong>Collaborative GPU Resource Management for Research Labs and AI Teams</strong></p>
+**Collaborative GPU Resource Management for Research Labs and AI Teams**
 
-<p align="center">
-  <img src="docs/assets/readme/gpudeck-icon.png" alt="GPUDeck macOS Logo" width="300" />
-</p>
+A shared Web portal for GPU telemetry, user occupancy, reservations and usage statistics across multiple servers. No Slurm required.
 
-<h2 align="center">Multiple Servers, One Training Workspace</h2>
+Current development version: **v2.9.1**. Repository: [leeechsh/gpudeck](https://github.com/leeechsh/gpudeck). License: [GPL-3.0](LICENSE).
 
-<p align="center">
-  📊 Monitor compute resources, 🔄 sync projects, 🚀 launch jobs, and 📈 stay on top of every run.
-</p>
+## Features
 
-<p align="center">
-GPUDeck is a desktop workspace for individual researchers and small teams managing GPU servers. It brings compute status, remote terminals, project assets, and training jobs from multiple Linux servers into one place.
-Find the right GPU before launching a job, monitor resources and processes while it runs, and keep projects, datasets, and models ready when switching between servers.
-</p>
+- Central dashboard for node availability, GPU utilization, VRAM, temperature and GPU processes.
+- User occupancy ranked by GPU count, with free GPUs grouped by model; live occupancy is separate from reservations.
+- GPU calendar with a horizontal time axis and one row per GPU; click or drag to select time ranges and multiple cards.
+- Current half-hour window booking and explicit 24-hour time selection.
+- Client and server validation for overlapping reservations, per-user concurrent limits and unavailable GPUs; warnings for offline nodes and live occupancy.
+- Administrator node registration, Linux user synchronization, mandatory initial password changes and a global concurrent GPU limit.
+- My Processes filtered by the account's associated Linux username.
+- Configurable WeCom group-bot notifications and GPU usage statistics.
 
-<p align="center">
-  <a href="https://github.com/leeechsh/gpudeck/releases/latest"><img src="https://img.shields.io/github/v/release/leeechsh/gpudeck?style=flat-square&logo=github&label=release" alt="Release"></a>
-  <a href="https://github.com/leeechsh/gpudeck/stargazers"><img src="https://img.shields.io/github/stars/leeechsh/gpudeck?style=flat-square&logo=github&label=stars" alt="GitHub Stars"></a>
-  <img src="https://img.shields.io/badge/platform-macOS%20%7C%20Windows-1687b8?style=flat-square" alt="Platform">
-  <a href="https://github.com/leeechsh/gpudeck/releases"><img src="https://img.shields.io/github/downloads/leeechsh/gpudeck/total?style=flat-square&logo=github&label=downloads" alt="Downloads"></a>
-  <a href="https://github.com/leeechsh/gpudeck/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-GPL--3.0-green?style=flat-square" alt="GPL-3.0 License"></a>
-</p>
+**GPUDeck is a collaborative reservation system, not a job scheduler.** Reservations do not assign CUDA devices, lock GPUs, launch jobs or stop processes. Users continue running jobs through SSH or existing tools. Usage outside reservations can be observed, flagged and notified, not forcibly prevented.
 
-<p align="center">
-  <img src="docs/assets/readme/fleet-overview.png" alt="Fleet-wide compute overview" width="33%">
-  <img src="docs/assets/readme/history-heatmap.png" alt="Resource history heatmap" width="33%">
-  <img src="docs/assets/readme/idle-compute.png" alt="Idle compute filtering" width="33%">
-</p>
+## Components
 
-## Download
+| Component | Responsibility | Location |
+| --- | --- | --- |
+| gpudeck-web | React/TypeScript UI embedded into Hub at build time | Browser |
+| gpudeck-hub | Rust/Axum API, identity, reservations, notifications and SQLite | One central server |
+| gpudeck-agent | Read-only GPU/process/Linux-user collection, reported every 5 seconds | Each GPU server |
 
-Current development version: **v2.9.0**. See [fresh Hub/Agent quick deployment](docs/QUICKSTART.md) or [existing standalone/systemd deployment](docs/STANDALONE.md); desktop installers will be published through [GitHub Releases](https://github.com/leeechsh/gpudeck/releases).
+Recommended deployment: **one executable + systemd + SQLite**. Runtime hosts do not need Docker, Node.js, Rust or PostgreSQL. Hub serves both Web assets and API; SQLite remains an external file. Docker remains an optional deployment method.
 
-## A Note from the Author
+Inherited RackTop Tauri desktop code is still present. Its SSH terminal, project synchronization and job-launch features are not current Hub features and are not required by this deployment.
 
-As the number of lab servers grows, keeping projects in sync, launching jobs, and checking server status becomes increasingly cumbersome. Asking AI to handle these tasks often consumes a surprising amount of time and tokens, so I built GPUDeck to bring these repetitive operations into a tool you can actually use directly.
+## Quick deployment on new servers
 
-Of course, building the app itself also consumed plenty of tokens. At least now, the next time I launch a job, I will not have to explain the servers, projects, and commands all over again.
+### 1. Build the server bundle
 
-## Key Features
-
-- **Multi-server compute overview**: View GPU, CPU, system memory, temperature, utilization, and process status in one place, then quickly locate resources by server or GPU.
-- **Idle compute discovery**: Filter available GPUs by VRAM, utilization, occupancy, and idle duration, then open a remote terminal or proceed directly to job launch.
-- **Remote terminals**: Open server terminals over SSH for quick environment checks, file inspection, and pre-launch troubleshooting.
-- **Project asset management**: Organize working directories by project and associate them with datasets and models. Check their status across servers, synchronize copies, and restore missing assets.
-- **Launch profiles and job management**: Save project-level launch profiles and switch working directories, GPU IDs, shell commands, hyperparameters, and log paths across servers and GPUs before launching and monitoring jobs from one place.
-- **Runtime status and history**: Inspect GPUDeck jobs and external processes, logs, resource monitoring, history heatmaps, and notifications for offline servers, high temperatures, idle resources, and process exits.
-- **Secure connections**: Supports SSH Agent, keys, passwords, `~/.ssh/config`, ProxyJump, and host key fingerprint verification. Unknown hosts are never accepted automatically.
-
-## Security and Data
-
-- GPUDeck never accepts an unverified host key automatically, and a changed fingerprint blocks the connection.
-- Passwords are never written to command lines, logs, or SQLite. They remain in session memory or the system keychain.
-- GPUDeck never runs `sudo` or modifies remote servers without confirmation.
-- Server, project, dataset, model, launch profile, and history data is stored in the local application data directory. Uninstalling the app usually does not remove this data automatically. To remove everything, first export or delete data from the app settings, then clear the application data directory according to your operating system.
-
-## Developer Guide
-
-GPUDeck is built with Tauri 2, React, TypeScript, Rust, and SQLite. Development requires Node.js 20+, the stable Rust toolchain, and the system OpenSSH client.
+On a Linux build host with Node.js/npm, Rust and a C compiler:
 
 ```bash
-npm install
-npm run dev
-npm run tauri dev
+git clone https://github.com/leeechsh/gpudeck.git
+cd gpudeck
+npm ci
+bash deploy/build-server-bundle.sh
 ```
 
-Run the frontend build and Rust tests:
+The archive in `target/server-bundles/` contains Hub, Agent, fresh installers, systemd units and instructions. It does not contain credentials or databases.
+
+Copy and extract it on target hosts, then enter the extracted directory. CPU architecture and Linux/glibc must be compatible with the build host; this is not a universally portable static binary.
+
+### 2. Install Hub
+
+Replace the example address with the new Hub's trusted-network or Tailscale IP:
 
 ```bash
+sudo bash deploy/install-hub.sh \
+  --listen 100.100.100.10:37935 \
+  --public-url http://100.100.100.10:37935 \
+  --admin admin
+```
+
+The installer prompts for the initial administrator password, creates a dedicated service user, SQLite directory and systemd service, and refuses to overwrite existing installations. There is no default administrator password; initial installation requires at least 8 printable ASCII characters.
+
+For public access, configure an HTTPS reverse proxy and use `--public-url https://your-domain`. HTTPS URLs enable Secure cookies. The installer does not provision DNS, certificates, FRP, firewall rules or Tailscale.
+
+### 3. Install each Agent
+
+In Hub's administrator panel, register each physical server separately. Download its node `.env` and copy it to that GPU host. Tokens are shown once; never share node identities.
+
+From the extracted bundle directory:
+
+```bash
+sudo bash deploy/install-agent.sh \
+  --config /absolute/path/node.env \
+  --hub-url http://100.100.100.10:37935
+```
+
+GPU hosts require an NVIDIA driver and working `nvidia-smi`. The Hub URL must be reachable from the node. Confirm the node is online in Hub after approximately 5 seconds.
+
+See [fresh-server quick deployment](docs/QUICKSTART.md) for full instructions and troubleshooting.
+
+## Accounts and reservation policy
+
+- Linux users reported by Agents can be synchronized into ordinary accounts. The login name is the system username; the initial password is `username@123456`, with a mandatory first-login change.
+- New user passwords require at least 8 characters. The initial Hub administrator password is chosen by the installer, not derived from the username.
+- Each reservation may last up to 48 hours and start within the current half-hour window or the next 14 days. Its end must be later than the current time.
+- Overlapping bookings on the same GPU are rejected; touching time boundaries are allowed.
+- The default concurrent limit is 2 GPUs. Administrators can change the global limit for all users, which new accounts inherit.
+- A live idle GPU is not necessarily unreserved for a future interval.
+
+## Security, data and operations
+
+- Hub uses Argon2 password hashes, server-side sessions and CSRF validation; Agents authenticate with separate node tokens.
+- Secure cookies require HTTPS for browser sessions. Agent tokens do not depend on browser cookies.
+- Both systemd services use dedicated non-root users. Installing services requires sudo.
+- Default Hub database: `/var/lib/gpudeck/gpudeck.sqlite`; Hub config: `/etc/gpudeck/hub.env`; Agent config: `/etc/gpudeck-agent.env`.
+- Databases and backups contain sensitive account/session/node data. Restrict access and keep independent backups. Use SQLite online backup or stop writers before a complete backup; do not copy a live main database file alone.
+- Deploy SQLite Hub as a single instance. Do not share the database between replicas or place it on a shared network filesystem.
+
+```bash
+sudo systemctl status gpudeck-hub
+sudo journalctl -u gpudeck-hub -n 50 --no-pager
+sudo systemctl status gpudeck-agent
+sudo journalctl -u gpudeck-agent -n 50 --no-pager
+```
+
+See [standalone operations](docs/STANDALONE.md) for existing deployments, historical Docker migration and rollback. Scripts containing `-current-` target the existing host, not arbitrary fresh servers.
+
+## Development and verification
+
+```bash
+npm ci
+npm test
 npm run build
-cargo test --manifest-path src-tauri/Cargo.toml
+cargo test --locked --workspace
+node scripts/test-fresh-installers.mjs
+bash -n deploy/*.sh
 ```
 
-Build a local package:
+Build Web before compiling Hub. To build both server executables and the deployment archive:
 
 ```bash
-npm run tauri build
+bash deploy/build-server-bundle.sh
 ```
 
-On macOS, the application bundle and DMG are written to `src-tauri/target/release/bundle/`. GitHub Actions builds the macOS and Windows installers separately.
+Preview Web with API requests proxied to a running local Hub:
 
-## Product Guide
+```bash
+VITE_HUB_PROXY_TARGET=http://127.0.0.1:37935 npm run dev
+```
 
-### 1. Add a Server
+The preview defaults to port 1420; it does not bypass authentication. First Hub startup requires database/listen configuration and an administrator bootstrap password; see [standalone deployment](docs/STANDALONE.md).
 
-Start by selecting **Add Server**. Enter the SSH address, port, and login user; choose SSH Agent, key, or password authentication as needed; and verify the host key. GPUDeck reads server resources over SSH, so no additional service needs to be installed on the server.
+## Documentation and release status
 
-![Add an SSH server](docs/assets/readme/add-server.png)
+- [Fresh-server quick deployment](docs/QUICKSTART.md)
+- [Standalone deployment, upgrades and migration](docs/STANDALONE.md)
+- [Docker deployment and reservation settings](docs/DEPLOYMENT.md)
+- [Detailed version history](docs/VERSION_INFOS.md)
+- [Short changelog](docs/Version_overview.md)
 
-### 2. View Server and GPU Status
+Git tags are not GitHub Releases. Linux bundles can currently be built from source; downloadable assets or verified macOS/Windows installers are not promised for every version. Check the actual assets on [GitHub Releases](https://github.com/leeechsh/gpudeck/releases).
 
-The overview displays the GPU count, GPU memory, system memory, and online status for each server. Open a server to inspect utilization, memory, temperature, active processes, and CPU status for every GPU, then select a card for more details.
+## Attribution and license
 
-![Server overview](docs/assets/readme/overview.png)
-
-![Fleet-wide compute overview](docs/assets/readme/fleet-overview.png)
-
-### 3. Use the Remote Terminal
-
-When you need to inspect an environment, open the remote terminal for the relevant server. It reuses the configured SSH connection and is suitable for running checks, confirming directories, validating Python environments, and troubleshooting launch issues.
-
-![Remote terminal](docs/assets/readme/terminal.png)
-
-### 4. Find Idle Compute Resources
-
-In **Idle Compute**, filter resources by GPU utilization, available VRAM, process occupancy, and idle duration. Select the launch button to begin creating a job, or select the terminal button to open a remote terminal without changing the job configuration.
-
-![Idle compute filtering](docs/assets/readme/idle-compute.png)
-
-### 5. View Resource History
-
-Resource History presents recent GPU usage as a heatmap, with the time axis fixed on the left and the layout adapting to the window size. Use it to see when a server is busy, identify GPUs that have remained idle, and spot unusual changes during a run.
-
-![Resource history heatmap](docs/assets/readme/history-heatmap.png)
-
-### 6. Manage Projects, Datasets, and Models
-
-Projects are the core unit of long-term organization. After associating datasets and models with a project, GPUDeck checks their paths and replica status on the target server. When moving a job to another server, use the synchronization dialog to identify missing assets and synchronize or restore them. A dataset or model can be associated with multiple projects.
-
-![Synchronize projects, datasets, and models](docs/assets/readme/sync-dialog.png)
-
-### 7. Create and Launch a Job
-
-Launch profiles are saved per project. The same hyperparameter configuration can use different working directories, GPU IDs, and commands on different servers. When you paste an existing command, GPUDeck recognizes `cd`, `CUDA_VISIBLE_DEVICES`, and project log paths, then generates a preview before launch. If no project log path is provided, GPUDeck uses its own managed log path so logs remain available from the Jobs view.
-
-![Launch a job](docs/assets/readme/launch-task.png)
-
-After launch, open **My Processes** to view job status, logs, and resource usage, or to safely stop a GPUDeck job or external process.
+GPUDeck builds on the UI and desktop foundation of [Tongzh-SEU/RackTop](https://github.com/Tongzh-SEU/RackTop), adding central Hub/Agent services, team identity and collaborative GPU reservations. Upstream attribution and license obligations are retained. Licensed under [GPL-3.0](LICENSE).
