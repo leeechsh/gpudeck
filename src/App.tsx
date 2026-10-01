@@ -1706,12 +1706,12 @@ function App() {
         </header>
 
         <div className="workspace__scroll">
-          {shouldShowGuidedEmptyState(mainView, servers.length) ? (
+          {mainView === 'hub-admin' && hub?.user.role === 'admin' ? (
+            <HubAdminPage onRegister={() => setShowHubNodeRegistration(true)} />
+          ) : shouldShowGuidedEmptyState(mainView, servers.length) ? (
             <EmptyState onboarding={<OnboardingChecklist steps={onboardingSteps} previewStep={onboardingPreviewStep} collapsed={onboardingCollapsed} dismissed={onboardingDismissed} useActualState={onboardingUseActualState} showPreviewControls={!api.isDesktop} onPreviewStepChange={setOnboardingPreviewStep} onCollapsedChange={setOnboardingCollapsed} onDismiss={() => { localStorage.setItem(ONBOARDING_DISMISSED_KEY, 'true'); setOnboardingDismissed(true); setToast('已隐藏新手引导，可在“设置 → 通用”中重新显示') }} onUseActualStateChange={setOnboardingUseActualState} />} showConnectionActions={!hub} onAdd={() => { setEditingServer(null); setShowServerForm(true) }} onImport={importConfig} />
           ) : servers.length === 0 ? (
             <EmptyState showConnectionActions={!hub} onAdd={() => { setEditingServer(null); setShowServerForm(true) }} onImport={importConfig} />
-          ) : mainView === 'hub-admin' && hub?.user.role === 'admin' ? (
-            <HubAdminPage onRegister={() => setShowHubNodeRegistration(true)} />
           ) : mainView === 'hub-reservations' ? (
             <HubReservationPage onCreate={() => setShowHubReservation(true)} />
           ) : mainView === 'projects' ? (
