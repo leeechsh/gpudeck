@@ -39,7 +39,7 @@ Find the right GPU before launching a job, monitor resources and processes while
 
 ## Download
 
-Current development version: **v2.5.1**. Deploy Web/Hub/Agent using the [deployment guide](docs/DEPLOYMENT.md); desktop installers will be published through [GitHub Releases](https://github.com/leeechsh/gpudeck/releases).
+Current development version: **v2.6.0**. Deploy Web/Hub/Agent using the [deployment guide](docs/DEPLOYMENT.md); desktop installers will be published through [GitHub Releases](https://github.com/leeechsh/gpudeck/releases).
 
 ## A Note from the Author
 

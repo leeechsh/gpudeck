@@ -9,7 +9,7 @@ use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use chrono::{Duration, Utc};
 use rand::TryRngCore;
 use serde::Serialize;
-use sqlx::{PgPool, Row};
+use sqlx::{Row, SqlitePool};
 use std::{env, sync::Arc};
 use uuid::Uuid;
 
@@ -64,10 +64,10 @@ impl FromRequestParts<Arc<AppState>> for AuthUser {
         let row = sqlx::query(
             "SELECT u.id,u.username,u.display_name,u.linux_username,u.wecom_user_id,u.role,u.concurrent_gpu_limit,u.must_change_password,s.csrf_token
              FROM sessions s JOIN users u ON u.id=s.user_id
-             WHERE s.token_hash=$1 AND s.expires_at>now() AND s.last_seen_at>now()-interval '12 hours' AND u.enabled=true"
+             WHERE s.token_hash=?1 AND s.expires_at>strftime('%Y-%m-%dT%H:%M:%fZ','now') AND s.last_seen_at>strftime('%Y-%m-%dT%H:%M:%fZ','now','-12 hours') AND u.enabled=true"
         ).bind(token_hash).fetch_optional(&state.pool).await?
             .ok_or_else(|| ApiError(StatusCode::UNAUTHORIZED, "登录已过期".into()))?;
-        sqlx::query("UPDATE sessions SET last_seen_at=now() WHERE token_hash=$1")
+        sqlx::query("UPDATE sessions SET last_seen_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE token_hash=?1")
             .bind(sha256(token))
             .execute(&state.pool)
             .await?;
@@ -139,7 +139,7 @@ impl AuthUser {
     }
 }
 
-pub async fn bootstrap_admin(pool: &PgPool) -> anyhow::Result<()> {
+pub async fn bootstrap_admin(pool: &SqlitePool) -> anyhow::Result<()> {
     let count: i64 = sqlx::query_scalar("SELECT count(*) FROM users WHERE role='admin'")
         .fetch_one(pool)
         .await?;
@@ -160,7 +160,7 @@ pub async fn bootstrap_admin(pool: &PgPool) -> anyhow::Result<()> {
         anyhow::bail!("bootstrap password must contain at least 8 characters");
     }
     let password_hash = hash_password(&password)?;
-    sqlx::query("INSERT INTO users(id,username,display_name,linux_username,password_hash,role) VALUES($1,$2,$2,$2,$3,'admin')")
+    sqlx::query("INSERT INTO users(id,username,display_name,linux_username,password_hash,role) VALUES(?1,?2,?2,?2,?3,'admin')")
         .bind(Uuid::new_v4()).bind(username).bind(password_hash).execute(pool).await?;
     Ok(())
 }
@@ -171,7 +171,10 @@ pub fn valid_password_length(password: &str) -> bool {
 }
 
 pub fn hash_password(password: &str) -> anyhow::Result<String> {
-    let salt = SaltString::generate(&mut argon2::password_hash::rand_core::OsRng);
+    let mut bytes = [0u8; 16];
+    rand::rngs::OsRng.try_fill_bytes(&mut bytes)?;
+    let salt = SaltString::encode_b64(&bytes)
+        .map_err(|error| anyhow::anyhow!("salt generation failed: {error}"))?;
     Ok(Argon2::default()
         .hash_password(password.as_bytes(), &salt)
         .map_err(|error| anyhow::anyhow!("password hashing failed: {error}"))?
@@ -199,16 +202,19 @@ pub fn sha256(value: &str) -> String {
     hex::encode(Sha256::digest(value.as_bytes()))
 }
 
-pub async fn create_session(pool: &PgPool, user_id: Uuid) -> Result<(String, String), ApiError> {
+pub async fn create_session(
+    pool: &SqlitePool,
+    user_id: Uuid,
+) -> Result<(String, String), ApiError> {
     let token = random_token(32);
     let csrf = random_token(24);
     sqlx::query(
-        "INSERT INTO sessions(token_hash,user_id,csrf_token,expires_at) VALUES($1,$2,$3,$4)",
+        "INSERT INTO sessions(token_hash,user_id,csrf_token,expires_at) VALUES(?1,?2,?3,?4)",
     )
     .bind(sha256(&token))
     .bind(user_id)
     .bind(&csrf)
-    .bind(Utc::now() + Duration::days(7))
+    .bind(crate::db::timestamp(Utc::now() + Duration::days(7)))
     .execute(pool)
     .await?;
     Ok((token, csrf))

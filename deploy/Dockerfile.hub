@@ -5,7 +5,7 @@ COPY crates ./crates
 RUN cargo build --locked --release -p gpudeck-hub
 
 FROM debian:bookworm-slim
-RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates sqlite3 && rm -rf /var/lib/apt/lists/*
 COPY --from=build /src/target/release/gpudeck-hub /usr/local/bin/gpudeck-hub
 COPY deploy/hub-entrypoint.sh /usr/local/bin/hub-entrypoint
 USER 65532:65532

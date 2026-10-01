@@ -1,5 +1,5 @@
 #!/bin/sh
 set -eu
-db_password=$(cat /run/gpudeck-secrets/postgres_password)
-export DATABASE_URL="postgres://gpudeck:${db_password}@gpudeck-postgres/gpudeck?sslmode=disable"
+umask 077
+export DATABASE_URL="${DATABASE_URL:-sqlite:///data/gpudeck.sqlite}"
 exec /usr/local/bin/gpudeck-hub

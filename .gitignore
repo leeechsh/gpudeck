@@ -7,6 +7,11 @@ src-tauri/target/
 skills-lock.json
 deploy/.env
 deploy/secrets/
+deploy/data/
+deploy/backups/
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
 output/playwright/
 .DS_Store
 *.log

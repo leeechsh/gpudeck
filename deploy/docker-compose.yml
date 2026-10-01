@@ -8,27 +8,16 @@ services:
       - -ec
       - |
         umask 077
-        test -s /secrets/postgres_password || head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n' > /secrets/postgres_password
         test -s /secrets/admin_password || head -c 24 /dev/urandom | base64 > /secrets/admin_password
-        chown 65532:65532 /secrets/postgres_password /secrets/admin_password
-        chmod 0400 /secrets/postgres_password /secrets/admin_password
-  gpudeck-postgres:
-    image: postgres:17-alpine
-    restart: unless-stopped
-    environment:
-      POSTGRES_DB: gpudeck
-      POSTGRES_USER: gpudeck
-      POSTGRES_PASSWORD_FILE: /run/gpudeck-secrets/postgres_password
-    volumes:
-      - gpudeck-postgres:/var/lib/postgresql/data
-      - gpudeck-secrets:/run/gpudeck-secrets:ro
+        chown 65532:65532 /secrets/admin_password
+        chmod 0400 /secrets/admin_password
+  data-init:
+    image: alpine:3.22
+    restart: "no"
+    volumes: ["gpudeck-data:/data"]
+    command: ["/bin/sh", "-ec", "chown -R 65532:65532 /data; chmod 0700 /data; find /data -type f -exec chmod 0600 '{}' ';'"]
     depends_on:
       secrets-init: { condition: service_completed_successfully }
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U gpudeck"]
-      interval: 10s
-      timeout: 5s
-      retries: 10
   gpudeck-hub:
     build:
       context: ..
@@ -39,10 +28,13 @@ services:
         required: false
     environment:
       GPUDECK_BOOTSTRAP_PASSWORD_FILE: /run/gpudeck-secrets/admin_password
+      DATABASE_URL: sqlite:///data/gpudeck.sqlite
     volumes:
       - gpudeck-secrets:/run/gpudeck-secrets:ro
+      - gpudeck-data:/data
     depends_on:
-      gpudeck-postgres: { condition: service_healthy }
+      secrets-init: { condition: service_completed_successfully }
+      data-init: { condition: service_completed_successfully }
   gpudeck-web:
     build:
       context: ..
@@ -56,7 +48,7 @@ services:
       - caddy-config:/config
     depends_on: [gpudeck-hub]
 volumes:
-  gpudeck-postgres:
+  gpudeck-data:
   gpudeck-secrets:
   caddy-data:
   caddy-config:

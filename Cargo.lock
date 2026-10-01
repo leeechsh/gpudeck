@@ -545,6 +545,58 @@ dependencies = [
 ]
 
 [[package]]
+name = "gpudeck-agent"
+version = "2.6.0"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "gpudeck-domain",
+ "reqwest",
+ "serde",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+ "uuid",
+]
+
+[[package]]
+name = "gpudeck-domain"
+version = "2.6.0"
+dependencies = [
+ "chrono",
+ "serde",
+ "serde_json",
+ "uuid",
+]
+
+[[package]]
+name = "gpudeck-hub"
+version = "2.6.0"
+dependencies = [
+ "anyhow",
+ "argon2",
+ "axum",
+ "base64 0.22.1",
+ "chrono",
+ "gpudeck-domain",
+ "hex",
+ "http",
+ "rand 0.9.5",
+ "reqwest",
+ "secrecy",
+ "serde",
+ "serde_json",
+ "sha2",
+ "sqlx",
+ "tokio",
+ "tower",
+ "tower-http",
+ "tracing",
+ "tracing-subscriber",
+ "uuid",
+]
+
+[[package]]
 name = "hashbrown"
 version = "0.15.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -915,6 +967,7 @@ version = "0.30.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2e99fb7a497b1e3339bc746195567ed8d3e24945ecd636e3619d20b9de9e9149"
 dependencies = [
+ "cc",
  "pkg-config",
  "vcpkg",
 ]
@@ -1251,57 +1304,6 @@ name = "r-efi"
 version = "6.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f8dcc9c7d52a811697d2151c701e0d08956f92b0e24136cf4cf27b57a6a0d9bf"
-
-[[package]]
-name = "gpudeck-agent"
-version = "2.5.1"
-dependencies = [
- "anyhow",
- "chrono",
- "gpudeck-domain",
- "reqwest",
- "serde",
- "tokio",
- "tracing",
- "tracing-subscriber",
- "uuid",
-]
-
-[[package]]
-name = "gpudeck-domain"
-version = "2.5.1"
-dependencies = [
- "chrono",
- "serde",
- "serde_json",
- "uuid",
-]
-
-[[package]]
-name = "gpudeck-hub"
-version = "2.5.1"
-dependencies = [
- "anyhow",
- "argon2",
- "axum",
- "base64 0.22.1",
- "chrono",
- "hex",
- "http",
- "gpudeck-domain",
- "rand 0.9.5",
- "reqwest",
- "secrecy",
- "serde",
- "serde_json",
- "sha2",
- "sqlx",
- "tokio",
- "tower-http",
- "tracing",
- "tracing-subscriber",
- "uuid",
-]
 
 [[package]]
 name = "rand"

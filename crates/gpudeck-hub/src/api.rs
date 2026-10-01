@@ -13,7 +13,7 @@ use chrono::{DateTime, Duration, Timelike, Utc};
 use gpudeck_domain::{AgentSnapshot, CreateReservation, ReservationView};
 use serde::Deserialize;
 use serde_json::{Value, json};
-use sqlx::{Postgres, Row, Transaction};
+use sqlx::{Row, Sqlite, Transaction};
 use std::{
     collections::{HashMap, HashSet},
     sync::Arc,
@@ -61,7 +61,7 @@ async fn login(
         input.username.trim().to_lowercase(),
         client_ip(&headers)
     );
-    if let Some(row) = sqlx::query("SELECT failures,locked_until FROM login_attempts WHERE key=$1")
+    if let Some(row) = sqlx::query("SELECT failures,locked_until FROM login_attempts WHERE key=?1")
         .bind(&key)
         .fetch_optional(&state.pool)
         .await?
@@ -74,7 +74,7 @@ async fn login(
             ));
         }
     }
-    let row = sqlx::query("SELECT id,password_hash FROM users WHERE username=$1 AND enabled=true")
+    let row = sqlx::query("SELECT id,password_hash FROM users WHERE username=?1 AND enabled=true")
         .bind(input.username.trim())
         .fetch_optional(&state.pool)
         .await?;
@@ -82,17 +82,17 @@ async fn login(
         .as_ref()
         .is_some_and(|row| auth::verify_password(&input.password, row.get("password_hash")));
     if !valid {
-        sqlx::query("INSERT INTO login_attempts(key,failures,window_started_at,locked_until) VALUES($1,1,now(),NULL)
-                     ON CONFLICT(key) DO UPDATE SET failures=CASE WHEN login_attempts.window_started_at<now()-interval '15 minutes' THEN 1 ELSE login_attempts.failures+1 END,
-                     window_started_at=CASE WHEN login_attempts.window_started_at<now()-interval '15 minutes' THEN now() ELSE login_attempts.window_started_at END,
-                     locked_until=CASE WHEN login_attempts.failures+1>=5 THEN now()+interval '15 minutes' ELSE NULL END")
+        sqlx::query("INSERT INTO login_attempts(key,failures,window_started_at,locked_until) VALUES(?1,1,strftime('%Y-%m-%dT%H:%M:%fZ','now'),NULL)
+                     ON CONFLICT(key) DO UPDATE SET failures=CASE WHEN login_attempts.window_started_at<strftime('%Y-%m-%dT%H:%M:%fZ','now','-15 minutes') THEN 1 ELSE login_attempts.failures+1 END,
+                     window_started_at=CASE WHEN login_attempts.window_started_at<strftime('%Y-%m-%dT%H:%M:%fZ','now','-15 minutes') THEN strftime('%Y-%m-%dT%H:%M:%fZ','now') ELSE login_attempts.window_started_at END,
+                     locked_until=CASE WHEN login_attempts.failures+1>=5 THEN strftime('%Y-%m-%dT%H:%M:%fZ','now','+15 minutes') ELSE NULL END")
             .bind(&key).execute(&state.pool).await?;
         return Err(ApiError(
             StatusCode::UNAUTHORIZED,
             "用户名或密码错误".into(),
         ));
     }
-    sqlx::query("DELETE FROM login_attempts WHERE key=$1")
+    sqlx::query("DELETE FROM login_attempts WHERE key=?1")
         .bind(&key)
         .execute(&state.pool)
         .await?;
@@ -117,7 +117,7 @@ async fn logout(
 ) -> Result<Response, ApiError> {
     user.require_csrf(&headers)?;
     if let Some(token) = session_token(&headers) {
-        sqlx::query("DELETE FROM sessions WHERE token_hash=$1")
+        sqlx::query("DELETE FROM sessions WHERE token_hash=?1")
             .bind(auth::sha256(token))
             .execute(&state.pool)
             .await?;
@@ -158,7 +158,7 @@ async fn change_password(
             "新密码至少8字符".into(),
         ));
     }
-    let hash: String = sqlx::query_scalar("SELECT password_hash FROM users WHERE id=$1")
+    let hash: String = sqlx::query_scalar("SELECT password_hash FROM users WHERE id=?1")
         .bind(user.id)
         .fetch_one(&state.pool)
         .await?;
@@ -167,7 +167,7 @@ async fn change_password(
     }
     let new_hash = auth::hash_password(&input.new_password)
         .map_err(|_| ApiError(StatusCode::INTERNAL_SERVER_ERROR, "密码处理失败".into()))?;
-    sqlx::query("UPDATE users SET password_hash=$2,must_change_password=false WHERE id=$1")
+    sqlx::query("UPDATE users SET password_hash=?2,must_change_password=false WHERE id=?1")
         .bind(user.id)
         .bind(new_hash)
         .execute(&state.pool)
@@ -216,7 +216,7 @@ async fn list_reservations(
     let rows = sqlx::query(
         "SELECT r.id,r.owner_id,u.display_name,r.starts_at,r.ends_at,r.project_name,r.purpose,r.status,r.checked_in_at,a.gpu_id
          FROM reservations r JOIN users u ON u.id=r.owner_id LEFT JOIN reservation_allocations a ON a.reservation_id=r.id
-         WHERE r.ends_at>now()-interval '30 days' ORDER BY r.starts_at,a.gpu_id"
+         WHERE r.ends_at>strftime('%Y-%m-%dT%H:%M:%fZ','now','-30 days') ORDER BY r.starts_at,a.gpu_id"
     ).fetch_all(&state.pool).await?;
     let mut result: Vec<ReservationView> = Vec::new();
     for row in rows {
@@ -250,21 +250,17 @@ async fn create_reservation(
     Json(input): Json<CreateReservation>,
 ) -> Result<(StatusCode, Json<Value>), ApiError> {
     user.require_csrf(&headers)?;
-    let mut transaction = state.pool.begin().await?;
-    // The shared lock keeps this booking and a global policy update ordered.
+    let mut transaction = state.pool.begin_with("BEGIN IMMEDIATE").await?;
+    // BEGIN IMMEDIATE serializes conflict/peak checks with all booking writes.
     let limit: i32 =
-        sqlx::query_scalar("SELECT concurrent_gpu_limit FROM hub_settings WHERE id=true FOR SHARE")
+        sqlx::query_scalar("SELECT concurrent_gpu_limit FROM hub_settings WHERE id=true")
             .fetch_one(&mut *transaction)
             .await?;
     validate_reservation(&input, limit)?;
-    sqlx::query("SELECT pg_advisory_xact_lock(hashtext($1))")
-        .bind(user.id.to_string())
-        .execute(&mut *transaction)
-        .await?;
     let overlaps = sqlx::query(
-        "SELECT lower(a.slot) AS starts_at,upper(a.slot) AS ends_at FROM reservation_allocations a JOIN reservations r ON r.id=a.reservation_id
-         WHERE r.owner_id=$1 AND a.slot && tstzrange($2,$3,'[)')"
-    ).bind(user.id).bind(input.starts_at).bind(input.ends_at).fetch_all(&mut *transaction).await?;
+        "SELECT a.starts_at AS starts_at,a.ends_at AS ends_at FROM reservation_allocations a JOIN reservations r ON r.id=a.reservation_id
+         WHERE r.owner_id=?1 AND a.starts_at<?3 AND a.ends_at>?2"
+    ).bind(user.id).bind(crate::db::timestamp(input.starts_at)).bind(crate::db::timestamp(input.ends_at)).fetch_all(&mut *transaction).await?;
     let intervals: Vec<_> = overlaps
         .iter()
         .map(|row| (row.get("starts_at"), row.get("ends_at")))
@@ -272,9 +268,9 @@ async fn create_reservation(
     let peak =
         peak_allocations(&intervals, input.starts_at, input.ends_at) + input.gpu_ids.len() as i64;
     let resources = sqlx::query(
-        "SELECT g.id,g.display_index,g.maintenance,g.missing,n.name AS node_name,n.enabled FROM gpus g JOIN nodes n ON n.id=g.node_id WHERE g.id=ANY($1) ORDER BY g.id FOR UPDATE OF g",
+        "SELECT g.id,g.display_index,g.maintenance,g.missing,n.name AS node_name,n.enabled FROM gpus g JOIN nodes n ON n.id=g.node_id WHERE hex(g.id) IN (SELECT value FROM json_each(?1)) ORDER BY g.id",
     )
-    .bind(&input.gpu_ids)
+    .bind(json!(input.gpu_ids.iter().map(|id| id.simple().to_string().to_uppercase()).collect::<Vec<_>>()))
     .fetch_all(&mut *transaction)
     .await?;
     if resources.len() != input.gpu_ids.len()
@@ -290,8 +286,8 @@ async fn create_reservation(
         ));
     }
     let conflicts = sqlx::query(
-        "SELECT g.display_index,n.name AS node_name,u.display_name,r.project_name,lower(a.slot) AS starts_at,upper(a.slot) AS ends_at FROM reservation_allocations a JOIN reservations r ON r.id=a.reservation_id JOIN gpus g ON g.id=a.gpu_id JOIN nodes n ON n.id=g.node_id JOIN users u ON u.id=r.owner_id WHERE a.gpu_id=ANY($1) AND a.slot && tstzrange($2,$3,'[)') ORDER BY g.id,lower(a.slot)"
-    ).bind(&input.gpu_ids).bind(input.starts_at).bind(input.ends_at).fetch_all(&mut *transaction).await?;
+        "SELECT g.display_index,n.name AS node_name,u.display_name,r.project_name,a.starts_at AS starts_at,a.ends_at AS ends_at FROM reservation_allocations a JOIN reservations r ON r.id=a.reservation_id JOIN gpus g ON g.id=a.gpu_id JOIN nodes n ON n.id=g.node_id JOIN users u ON u.id=r.owner_id WHERE hex(a.gpu_id) IN (SELECT value FROM json_each(?1)) AND a.starts_at<?3 AND a.ends_at>?2 ORDER BY g.id,a.starts_at"
+    ).bind(json!(input.gpu_ids.iter().map(|id| id.simple().to_string().to_uppercase()).collect::<Vec<_>>())).bind(crate::db::timestamp(input.starts_at)).bind(crate::db::timestamp(input.ends_at)).fetch_all(&mut *transaction).await?;
     if !conflicts.is_empty() {
         let details = conflicts
             .iter()
@@ -316,16 +312,16 @@ async fn create_reservation(
         ));
     }
     let id = Uuid::new_v4();
-    sqlx::query("INSERT INTO reservations(id,owner_id,starts_at,ends_at,project_name,purpose,status) VALUES($1,$2,$3,$4,$5,$6,'scheduled')")
-        .bind(id).bind(user.id).bind(input.starts_at).bind(input.ends_at).bind(input.project_name.trim()).bind(input.purpose.trim()).execute(&mut *transaction).await?;
+    sqlx::query("INSERT INTO reservations(id,owner_id,starts_at,ends_at,project_name,purpose,status) VALUES(?1,?2,?3,?4,?5,?6,'scheduled')")
+        .bind(id).bind(user.id).bind(crate::db::timestamp(input.starts_at)).bind(crate::db::timestamp(input.ends_at)).bind(input.project_name.trim()).bind(input.purpose.trim()).execute(&mut *transaction).await?;
     for gpu_id in &input.gpu_ids {
-        let result = sqlx::query("INSERT INTO reservation_allocations(id,reservation_id,gpu_id,slot) VALUES($1,$2,$3,tstzrange($4,$5,'[)'))")
-            .bind(Uuid::new_v4()).bind(id).bind(gpu_id).bind(input.starts_at).bind(input.ends_at).execute(&mut *transaction).await;
+        let result = sqlx::query("INSERT INTO reservation_allocations(id,reservation_id,gpu_id,starts_at,ends_at) VALUES(?1,?2,?3,?4,?5)")
+            .bind(Uuid::new_v4()).bind(id).bind(gpu_id).bind(crate::db::timestamp(input.starts_at)).bind(crate::db::timestamp(input.ends_at)).execute(&mut *transaction).await;
         if let Err(error) = result {
-            if error.as_database_error().is_some_and(|db| {
-                db.constraint()
-                    .is_some_and(|name| name.contains("reservation_allocations"))
-            }) {
+            if error
+                .as_database_error()
+                .is_some_and(|db| db.message().contains("reservation_allocations_overlap"))
+            {
                 return Err(ApiError(
                     StatusCode::CONFLICT,
                     "所选 GPU 的预约状态已变化，请刷新后重新选择时段".into(),
@@ -376,7 +372,7 @@ async fn check_in(
     Path(id): Path<Uuid>,
 ) -> Result<StatusCode, ApiError> {
     user.require_csrf(&headers)?;
-    let affected = sqlx::query("UPDATE reservations SET checked_in_at=now(),status='active',updated_at=now() WHERE id=$1 AND owner_id=$2 AND status IN ('scheduled','active')")
+    let affected = sqlx::query("UPDATE reservations SET checked_in_at=strftime('%Y-%m-%dT%H:%M:%fZ','now'),status='active',updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id=?1 AND owner_id=?2 AND status IN ('scheduled','active')")
         .bind(id).bind(user.id).execute(&state.pool).await?.rows_affected();
     if affected == 0 {
         return Err(ApiError(
@@ -394,8 +390,8 @@ async fn end_early(
     Path(id): Path<Uuid>,
 ) -> Result<StatusCode, ApiError> {
     user.require_csrf(&headers)?;
-    let mut transaction = state.pool.begin().await?;
-    let affected = sqlx::query("UPDATE reservations SET ended_early_at=now(),ends_at=LEAST(ends_at,now()),status='completed',updated_at=now() WHERE id=$1 AND owner_id=$2 AND status IN ('scheduled','active')")
+    let mut transaction = state.pool.begin_with("BEGIN IMMEDIATE").await?;
+    let affected = sqlx::query("UPDATE reservations SET ended_early_at=strftime('%Y-%m-%dT%H:%M:%fZ','now'),ends_at=min(ends_at,strftime('%Y-%m-%dT%H:%M:%fZ','now')),status='completed',updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id=?1 AND owner_id=?2 AND status IN ('scheduled','active')")
         .bind(id).bind(user.id).execute(&mut *transaction).await?.rows_affected();
     if affected == 0 {
         return Err(ApiError(
@@ -403,7 +399,7 @@ async fn end_early(
             "预约不存在或不可结束".into(),
         ));
     }
-    sqlx::query("DELETE FROM reservation_allocations WHERE reservation_id=$1")
+    sqlx::query("DELETE FROM reservation_allocations WHERE reservation_id=?1")
         .bind(id)
         .execute(&mut *transaction)
         .await?;
@@ -418,11 +414,11 @@ async fn mutate_reservation(
     status: &str,
     action: &str,
 ) -> Result<(), ApiError> {
-    let mut transaction = state.pool.begin().await?;
+    let mut transaction = state.pool.begin_with("BEGIN IMMEDIATE").await?;
     let affected = if user.role == "admin" {
-        sqlx::query("UPDATE reservations SET status=$2,updated_at=now() WHERE id=$1 AND status IN ('scheduled','active')").bind(id).bind(status).execute(&mut *transaction).await?.rows_affected()
+        sqlx::query("UPDATE reservations SET status=?2,updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id=?1 AND status IN ('scheduled','active')").bind(id).bind(status).execute(&mut *transaction).await?.rows_affected()
     } else {
-        sqlx::query("UPDATE reservations SET status=$3,updated_at=now() WHERE id=$1 AND owner_id=$2 AND status IN ('scheduled','active')").bind(id).bind(user.id).bind(status).execute(&mut *transaction).await?.rows_affected()
+        sqlx::query("UPDATE reservations SET status=?3,updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id=?1 AND owner_id=?2 AND status IN ('scheduled','active')").bind(id).bind(user.id).bind(status).execute(&mut *transaction).await?.rows_affected()
     };
     if affected == 0 {
         return Err(ApiError(
@@ -430,7 +426,7 @@ async fn mutate_reservation(
             "预约不存在或不可修改".into(),
         ));
     }
-    sqlx::query("DELETE FROM reservation_allocations WHERE reservation_id=$1")
+    sqlx::query("DELETE FROM reservation_allocations WHERE reservation_id=?1")
         .bind(id)
         .execute(&mut *transaction)
         .await?;
@@ -451,7 +447,7 @@ async fn statistics(
     State(state): State<Arc<AppState>>,
     _user: AuthUser,
 ) -> Result<Json<Value>, ApiError> {
-    let rows = sqlx::query("SELECT username,round((sum(active_seconds)::double precision/3600)::numeric,2)::double precision gpu_hours,sum(memory_mb_seconds) memory_mb_seconds,sum(coverage_seconds) coverage_seconds FROM usage_minutes WHERE minute>now()-interval '90 days' GROUP BY username ORDER BY gpu_hours DESC")
+    let rows = sqlx::query("SELECT username,round(sum(active_seconds)/3600.0,2) gpu_hours,sum(memory_mb_seconds) memory_mb_seconds,sum(coverage_seconds) coverage_seconds FROM usage_minutes WHERE minute>strftime('%Y-%m-%dT%H:%M:%fZ','now','-90 days') GROUP BY username ORDER BY gpu_hours DESC")
         .fetch_all(&state.pool).await?;
     Ok(Json(
         json!({"users":rows.into_iter().map(|row|json!({"username":row.get::<String,_>("username"),"gpuHours":row.get::<f64,_>("gpu_hours"),"coverageSeconds":row.get::<i64,_>("coverage_seconds")})).collect::<Vec<_>>() }),
@@ -507,7 +503,7 @@ async fn create_node(
     validate_node_registration(&input.name, &input.hostname)?;
     let name = input.name.trim();
     if sqlx::query_scalar::<_, bool>(
-        "SELECT EXISTS(SELECT 1 FROM nodes WHERE lower(name)=lower($1))",
+        "SELECT EXISTS(SELECT 1 FROM nodes WHERE lower(name)=lower(?1))",
     )
     .bind(name)
     .fetch_one(&state.pool)
@@ -517,7 +513,7 @@ async fn create_node(
     }
     let id = Uuid::new_v4();
     let token = auth::random_token(32);
-    sqlx::query("INSERT INTO nodes(id,name,hostname,token_hash) VALUES($1,$2,$3,$4)")
+    sqlx::query("INSERT INTO nodes(id,name,hostname,token_hash) VALUES(?1,?2,?3,?4)")
         .bind(id)
         .bind(name)
         .bind(input.hostname.trim())
@@ -543,14 +539,13 @@ async fn agent_snapshot(
             "采样时间偏差过大".into(),
         ));
     }
-    let mut transaction = state.pool.begin().await?;
-    let row = sqlx::query(
-        "SELECT id,last_sequence FROM nodes WHERE token_hash=$1 AND enabled=true FOR UPDATE",
-    )
-    .bind(auth::sha256(token))
-    .fetch_optional(&mut *transaction)
-    .await?
-    .ok_or_else(|| ApiError(StatusCode::UNAUTHORIZED, "Agent token 无效".into()))?;
+    let mut transaction = state.pool.begin_with("BEGIN IMMEDIATE").await?;
+    let row =
+        sqlx::query("SELECT id,last_sequence FROM nodes WHERE token_hash=?1 AND enabled=true")
+            .bind(auth::sha256(token))
+            .fetch_optional(&mut *transaction)
+            .await?
+            .ok_or_else(|| ApiError(StatusCode::UNAUTHORIZED, "Agent token 无效".into()))?;
     let node_id: Uuid = row.get("id");
     let last: i64 = row.get("last_sequence");
     if node_id != snapshot.node_id || snapshot.sequence <= last {
@@ -559,21 +554,21 @@ async fn agent_snapshot(
             "Agent 快照乱序或重放".into(),
         ));
     }
-    sqlx::query("UPDATE nodes SET hostname=$2,last_sequence=$3,last_seen_at=now(),last_sample_at=$4 WHERE id=$1").bind(node_id).bind(&snapshot.hostname).bind(snapshot.sequence).bind(snapshot.sampled_at).execute(&mut *transaction).await?;
-    sqlx::query("UPDATE gpus SET missing=true WHERE node_id=$1")
+    sqlx::query("UPDATE nodes SET hostname=?2,last_sequence=?3,last_seen_at=strftime('%Y-%m-%dT%H:%M:%fZ','now'),last_sample_at=?4 WHERE id=?1").bind(node_id).bind(&snapshot.hostname).bind(snapshot.sequence).bind(crate::db::timestamp(snapshot.sampled_at)).execute(&mut *transaction).await?;
+    sqlx::query("UPDATE gpus SET missing=true WHERE node_id=?1")
         .bind(node_id)
         .execute(&mut *transaction)
         .await?;
     let mut gpu_ids = HashMap::new();
     for gpu in &snapshot.gpus {
-        let id:Uuid=sqlx::query_scalar("INSERT INTO gpus(id,node_id,gpu_uuid,display_index,name,memory_total_mb,last_seen_at,missing) VALUES($1,$2,$3,$4,$5,$6,$7,false) ON CONFLICT(gpu_uuid) DO UPDATE SET node_id=excluded.node_id,display_index=excluded.display_index,name=excluded.name,memory_total_mb=excluded.memory_total_mb,last_seen_at=excluded.last_seen_at,missing=false RETURNING id")
-            .bind(Uuid::new_v4()).bind(node_id).bind(&gpu.uuid).bind(gpu.index).bind(&gpu.name).bind(gpu.memory_total_mb).bind(snapshot.sampled_at).fetch_one(&mut *transaction).await?;
+        let id:Uuid=sqlx::query_scalar("INSERT INTO gpus(id,node_id,gpu_uuid,display_index,name,memory_total_mb,last_seen_at,missing) VALUES(?1,?2,?3,?4,?5,?6,?7,false) ON CONFLICT(gpu_uuid) DO UPDATE SET node_id=excluded.node_id,display_index=excluded.display_index,name=excluded.name,memory_total_mb=excluded.memory_total_mb,last_seen_at=excluded.last_seen_at,missing=false RETURNING id")
+            .bind(Uuid::new_v4()).bind(node_id).bind(&gpu.uuid).bind(gpu.index).bind(&gpu.name).bind(gpu.memory_total_mb).bind(crate::db::timestamp(snapshot.sampled_at)).fetch_one(&mut *transaction).await?;
         gpu_ids.insert(gpu.uuid.clone(), id);
-        sqlx::query("INSERT INTO current_gpu_state(gpu_id,sampled_at,memory_used_mb,utilization_percent,temperature_celsius) VALUES($1,$2,$3,$4,$5) ON CONFLICT(gpu_id) DO UPDATE SET sampled_at=excluded.sampled_at,memory_used_mb=excluded.memory_used_mb,utilization_percent=excluded.utilization_percent,temperature_celsius=excluded.temperature_celsius")
-            .bind(id).bind(snapshot.sampled_at).bind(gpu.memory_used_mb).bind(gpu.utilization_percent).bind(gpu.temperature_celsius).execute(&mut *transaction).await?;
+        sqlx::query("INSERT INTO current_gpu_state(gpu_id,sampled_at,memory_used_mb,utilization_percent,temperature_celsius) VALUES(?1,?2,?3,?4,?5) ON CONFLICT(gpu_id) DO UPDATE SET sampled_at=excluded.sampled_at,memory_used_mb=excluded.memory_used_mb,utilization_percent=excluded.utilization_percent,temperature_celsius=excluded.temperature_celsius")
+            .bind(id).bind(crate::db::timestamp(snapshot.sampled_at)).bind(gpu.memory_used_mb).bind(gpu.utilization_percent).bind(gpu.temperature_celsius).execute(&mut *transaction).await?;
     }
     sqlx::query(
-        "DELETE FROM current_processes WHERE gpu_id IN (SELECT id FROM gpus WHERE node_id=$1)",
+        "DELETE FROM current_processes WHERE gpu_id IN (SELECT id FROM gpus WHERE node_id=?1)",
     )
     .bind(node_id)
     .execute(&mut *transaction)
@@ -589,17 +584,17 @@ async fn agent_snapshot(
         let Some(gpu_id) = gpu_ids.get(&process.gpu_uuid) else {
             continue;
         };
-        sqlx::query("INSERT INTO current_processes(gpu_id,pid,username,command,memory_used_mb,sampled_at) VALUES($1,$2,$3,$4,$5,$6)").bind(gpu_id).bind(process.pid).bind(&process.username).bind(&process.command).bind(process.memory_used_mb).bind(snapshot.sampled_at).execute(&mut *transaction).await?;
+        sqlx::query("INSERT INTO current_processes(gpu_id,pid,username,command,memory_used_mb,sampled_at) VALUES(?1,?2,?3,?4,?5,?6)").bind(gpu_id).bind(process.pid).bind(&process.username).bind(&process.command).bind(process.memory_used_mb).bind(crate::db::timestamp(snapshot.sampled_at)).execute(&mut *transaction).await?;
         if seen.insert((*gpu_id, process.username.clone())) {
-            sqlx::query("INSERT INTO usage_minutes(gpu_id,username,minute,active_seconds,memory_mb_seconds,coverage_seconds) VALUES($1,$2,$3,5,$4,5) ON CONFLICT(gpu_id,username,minute) DO UPDATE SET active_seconds=LEAST(60,usage_minutes.active_seconds+5),memory_mb_seconds=usage_minutes.memory_mb_seconds+excluded.memory_mb_seconds,coverage_seconds=LEAST(60,usage_minutes.coverage_seconds+5)")
-                .bind(gpu_id).bind(&process.username).bind(minute).bind(process.memory_used_mb*5).execute(&mut *transaction).await?;
+            sqlx::query("INSERT INTO usage_minutes(gpu_id,username,minute,active_seconds,memory_mb_seconds,coverage_seconds) VALUES(?1,?2,?3,5,?4,5) ON CONFLICT(gpu_id,username,minute) DO UPDATE SET active_seconds=min(60,usage_minutes.active_seconds+5),memory_mb_seconds=usage_minutes.memory_mb_seconds+excluded.memory_mb_seconds,coverage_seconds=min(60,usage_minutes.coverage_seconds+5)")
+                .bind(gpu_id).bind(&process.username).bind(crate::db::timestamp(minute)).bind(process.memory_used_mb*5).execute(&mut *transaction).await?;
         }
     }
     for system_user in &snapshot.system_users {
-        sqlx::query("INSERT INTO node_system_users(node_id,username,uid,shell,last_seen_at) VALUES($1,$2,$3,$4,$5) ON CONFLICT(node_id,username) DO UPDATE SET uid=excluded.uid,shell=excluded.shell,last_seen_at=excluded.last_seen_at")
-            .bind(node_id).bind(&system_user.username).bind(system_user.uid).bind(&system_user.shell).bind(snapshot.sampled_at).execute(&mut *transaction).await?;
+        sqlx::query("INSERT INTO node_system_users(node_id,username,uid,shell,last_seen_at) VALUES(?1,?2,?3,?4,?5) ON CONFLICT(node_id,username) DO UPDATE SET uid=excluded.uid,shell=excluded.shell,last_seen_at=excluded.last_seen_at")
+            .bind(node_id).bind(&system_user.username).bind(system_user.uid).bind(&system_user.shell).bind(crate::db::timestamp(snapshot.sampled_at)).execute(&mut *transaction).await?;
         let exists: bool = sqlx::query_scalar(
-            "SELECT EXISTS(SELECT 1 FROM users WHERE username=$1 OR linux_username=$1)",
+            "SELECT EXISTS(SELECT 1 FROM users WHERE username=?1 OR linux_username=?1)",
         )
         .bind(&system_user.username)
         .fetch_one(&mut *transaction)
@@ -607,7 +602,7 @@ async fn agent_snapshot(
         if !exists {
             let hash = auth::hash_password(&format!("{}@123456", system_user.username))
                 .map_err(|_| ApiError(StatusCode::INTERNAL_SERVER_ERROR, "密码处理失败".into()))?;
-            sqlx::query("INSERT INTO users(id,username,display_name,linux_username,password_hash,role,must_change_password) VALUES($1,$2,$2,$2,$3,'user',true) ON CONFLICT DO NOTHING")
+            sqlx::query("INSERT INTO users(id,username,display_name,linux_username,password_hash,role,must_change_password) VALUES(?1,?2,?2,?2,?3,'user',true) ON CONFLICT DO NOTHING")
                 .bind(Uuid::new_v4()).bind(&system_user.username).bind(hash).execute(&mut *transaction).await?;
         }
     }
@@ -659,17 +654,16 @@ async fn save_global_settings(
             "并发 GPU 上限必须为 1–14 的整数".into(),
         ));
     }
-    let mut tx = state.pool.begin().await?;
-    let previous: i32 = sqlx::query_scalar(
-        "SELECT concurrent_gpu_limit FROM hub_settings WHERE id=true FOR UPDATE",
-    )
-    .fetch_one(&mut *tx)
-    .await?;
-    sqlx::query("UPDATE hub_settings SET concurrent_gpu_limit=$1 WHERE id=true")
+    let mut tx = state.pool.begin_with("BEGIN IMMEDIATE").await?;
+    let previous: i32 =
+        sqlx::query_scalar("SELECT concurrent_gpu_limit FROM hub_settings WHERE id=true")
+            .fetch_one(&mut *tx)
+            .await?;
+    sqlx::query("UPDATE hub_settings SET concurrent_gpu_limit=?1 WHERE id=true")
         .bind(limit)
         .execute(&mut *tx)
         .await?;
-    let count = sqlx::query("UPDATE users SET concurrent_gpu_limit=$1")
+    let count = sqlx::query("UPDATE users SET concurrent_gpu_limit=?1")
         .bind(limit)
         .execute(&mut *tx)
         .await?
@@ -706,7 +700,7 @@ async fn create_user(
     let id = Uuid::new_v4();
     let password_hash = auth::hash_password(&input.password)
         .map_err(|_| ApiError(StatusCode::INTERNAL_SERVER_ERROR, "密码处理失败".into()))?;
-    sqlx::query("INSERT INTO users(id,username,display_name,linux_username,wecom_user_id,password_hash,role) VALUES($1,$2,$3,$4,$5,$6,$7)").bind(id).bind(input.username.trim()).bind(input.display_name.trim()).bind(input.linux_username.trim()).bind(input.wecom_user_id).bind(password_hash).bind(role).execute(&state.pool).await?;
+    sqlx::query("INSERT INTO users(id,username,display_name,linux_username,wecom_user_id,password_hash,role) VALUES(?1,?2,?3,?4,?5,?6,?7)").bind(id).bind(input.username.trim()).bind(input.display_name.trim()).bind(input.linux_username.trim()).bind(input.wecom_user_id).bind(password_hash).bind(role).execute(&state.pool).await?;
     Ok((StatusCode::CREATED, Json(json!({"id":id}))))
 }
 
@@ -728,11 +722,11 @@ async fn sync_system_users(
 ) -> Result<Json<Value>, ApiError> {
     admin.require_admin()?;
     admin.require_csrf(&headers)?;
-    let names: Vec<String> = sqlx::query_scalar("SELECT DISTINCT username FROM node_system_users WHERE last_seen_at>now()-interval '10 minutes' ORDER BY username").fetch_all(&state.pool).await?;
+    let names: Vec<String> = sqlx::query_scalar("SELECT DISTINCT username FROM node_system_users WHERE last_seen_at>strftime('%Y-%m-%dT%H:%M:%fZ','now','-10 minutes') ORDER BY username").fetch_all(&state.pool).await?;
     let mut created = Vec::new();
     for name in names {
         let exists: bool = sqlx::query_scalar(
-            "SELECT EXISTS(SELECT 1 FROM users WHERE username=$1 OR linux_username=$1)",
+            "SELECT EXISTS(SELECT 1 FROM users WHERE username=?1 OR linux_username=?1)",
         )
         .bind(&name)
         .fetch_one(&state.pool)
@@ -742,7 +736,7 @@ async fn sync_system_users(
         }
         let hash = auth::hash_password(&format!("{name}@123456"))
             .map_err(|_| ApiError(StatusCode::INTERNAL_SERVER_ERROR, "密码处理失败".into()))?;
-        sqlx::query("INSERT INTO users(id,username,display_name,linux_username,password_hash,role,must_change_password) VALUES($1,$2,$2,$2,$3,'user',true)").bind(Uuid::new_v4()).bind(&name).bind(hash).execute(&state.pool).await?;
+        sqlx::query("INSERT INTO users(id,username,display_name,linux_username,password_hash,role,must_change_password) VALUES(?1,?2,?2,?2,?3,'user',true)").bind(Uuid::new_v4()).bind(&name).bind(hash).execute(&state.pool).await?;
         created.push(name);
     }
     let created_count = created.len();
@@ -815,24 +809,24 @@ fn validate_reservation(input: &CreateReservation, limit: i32) -> Result<(), Api
     Ok(())
 }
 async fn enqueue(
-    tx: &mut Transaction<'_, Postgres>,
+    tx: &mut Transaction<'_, Sqlite>,
     event_type: &str,
     dedupe_key: &str,
     content: &str,
     mentioned: Option<String>,
 ) -> Result<(), ApiError> {
-    sqlx::query("INSERT INTO notification_outbox(id,event_type,dedupe_key,content,mentioned_user_ids) VALUES($1,$2,$3,$4,$5) ON CONFLICT(dedupe_key) DO NOTHING").bind(Uuid::new_v4()).bind(event_type).bind(dedupe_key).bind(content).bind(mentioned.into_iter().collect::<Vec<_>>()).execute(&mut **tx).await?;
+    sqlx::query("INSERT INTO notification_outbox(id,event_type,dedupe_key,content,mentioned_user_ids) VALUES(?1,?2,?3,?4,?5) ON CONFLICT(dedupe_key) DO NOTHING").bind(Uuid::new_v4()).bind(event_type).bind(dedupe_key).bind(content).bind(json!(mentioned.into_iter().collect::<Vec<_>>())).execute(&mut **tx).await?;
     Ok(())
 }
 async fn audit(
-    tx: &mut Transaction<'_, Postgres>,
+    tx: &mut Transaction<'_, Sqlite>,
     actor: Option<Uuid>,
     action: &str,
     object_type: &str,
     object_id: &str,
     detail: Value,
 ) -> Result<(), ApiError> {
-    sqlx::query("INSERT INTO audit_events(id,actor_id,action,object_type,object_id,detail) VALUES($1,$2,$3,$4,$5,$6)").bind(Uuid::new_v4()).bind(actor).bind(action).bind(object_type).bind(object_id).bind(detail).execute(&mut **tx).await?;
+    sqlx::query("INSERT INTO audit_events(id,actor_id,action,object_type,object_id,detail) VALUES(?1,?2,?3,?4,?5,?6)").bind(Uuid::new_v4()).bind(actor).bind(action).bind(object_type).bind(object_id).bind(detail).execute(&mut **tx).await?;
     Ok(())
 }
 fn client_ip(headers: &HeaderMap) -> String {

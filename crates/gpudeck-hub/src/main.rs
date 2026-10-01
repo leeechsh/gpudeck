@@ -1,17 +1,20 @@
 mod api;
 mod auth;
+mod db;
+#[cfg(test)]
+mod storage_tests;
 mod worker;
 
 use anyhow::Context;
 use axum::{Router, routing::get};
-use sqlx::{PgPool, postgres::PgPoolOptions};
+use sqlx::SqlitePool;
 use std::{env, net::SocketAddr, sync::Arc};
 use tower_http::trace::TraceLayer;
 use tracing::info;
 
 #[derive(Clone)]
 pub struct AppState {
-    pub pool: PgPool,
+    pub pool: SqlitePool,
     pub public_url: String,
     pub wecom_webhook: Option<String>,
     pub secure_cookie: bool,
@@ -26,12 +29,15 @@ async fn main() -> anyhow::Result<()> {
         )
         .init();
 
-    let database_url = env::var("DATABASE_URL").context("DATABASE_URL is required")?;
-    let pool = PgPoolOptions::new()
-        .max_connections(10)
-        .connect(&database_url)
-        .await?;
-    sqlx::migrate!().run(&pool).await?;
+    let database_url =
+        env::var("DATABASE_URL").unwrap_or_else(|_| "sqlite://gpudeck.sqlite".into());
+    let pool = db::open(&database_url)
+        .await
+        .context("opening SQLite database")?;
+    if env::args().any(|arg| arg == "--init-db-only") {
+        pool.close().await;
+        return Ok(());
+    }
     auth::bootstrap_admin(&pool).await?;
 
     let state = Arc::new(AppState {
