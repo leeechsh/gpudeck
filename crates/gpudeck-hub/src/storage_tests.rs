@@ -121,6 +121,97 @@ impl Fixture {
 }
 
 #[tokio::test]
+async fn sqlite_automatically_detects_reservation_usage() {
+    let f = Fixture::new().await;
+    let now = Utc::now();
+    let start =
+        chrono::DateTime::from_timestamp(now.timestamp().div_euclid(1800) * 1800, 0).unwrap();
+    let (status, booking, _) = call(
+        &f.app,
+        Some(&f.user),
+        "POST",
+        "/reservations",
+        f.booking(start, now + Duration::hours(1)),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED);
+    let id = Uuid::parse_str(booking["id"].as_str().unwrap()).unwrap();
+    let client = reqwest::Client::new();
+    for (username, sampled_at, expected) in [
+        ("someone_else", now, false),
+        ("alice", now - Duration::minutes(3), false),
+        ("alice", start - Duration::seconds(1), false),
+        ("alice", now + Duration::hours(1), false),
+        ("alice", now, true),
+    ] {
+        sqlx::query("INSERT INTO current_processes(gpu_id,pid,username,command,memory_used_mb,sampled_at) VALUES(?1,42,?2,'python',100,?3) ON CONFLICT(gpu_id,pid) DO UPDATE SET username=excluded.username,sampled_at=excluded.sampled_at")
+            .bind(f.gpu).bind(username).bind(db::timestamp(sampled_at)).execute(&f.state.pool).await.unwrap();
+        worker::tick(&f.state, &client).await.unwrap();
+        let checked: Option<String> =
+            sqlx::query_scalar("SELECT checked_in_at FROM reservations WHERE id=?1")
+                .bind(id)
+                .fetch_one(&f.state.pool)
+                .await
+                .unwrap();
+        assert_eq!(checked.is_some(), expected, "{username} {sampled_at}");
+    }
+    let first: String = sqlx::query_scalar("SELECT checked_in_at FROM reservations WHERE id=?1")
+        .bind(id)
+        .fetch_one(&f.state.pool)
+        .await
+        .unwrap();
+    sqlx::query("DELETE FROM current_processes")
+        .execute(&f.state.pool)
+        .await
+        .unwrap();
+    worker::tick(&f.state, &client).await.unwrap();
+    let later: String = sqlx::query_scalar("SELECT checked_in_at FROM reservations WHERE id=?1")
+        .bind(id)
+        .fetch_one(&f.state.pool)
+        .await
+        .unwrap();
+    assert_eq!(first, later);
+    // Even after the process exits, an observed reservation must not emit
+    // a no-show notification at the 15-minute reminder boundary.
+    sqlx::query("UPDATE reservations SET starts_at=?2 WHERE id=?1")
+        .bind(id)
+        .bind(db::timestamp(Utc::now() - Duration::minutes(16)))
+        .execute(&f.state.pool)
+        .await
+        .unwrap();
+    sqlx::query("DELETE FROM notification_outbox WHERE event_type='reservation.no_show'")
+        .execute(&f.state.pool)
+        .await
+        .unwrap();
+    worker::tick(&f.state, &client).await.unwrap();
+    let count: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM notification_outbox WHERE event_type='reservation.no_show'",
+    )
+    .fetch_one(&f.state.pool)
+    .await
+    .unwrap();
+    assert_eq!(count, 0);
+    // Without an observed process the reminder is emitted once, not every tick.
+    sqlx::query("UPDATE reservations SET checked_in_at=NULL WHERE id=?1")
+        .bind(id)
+        .execute(&f.state.pool)
+        .await
+        .unwrap();
+    worker::tick(&f.state, &client).await.unwrap();
+    worker::tick(&f.state, &client).await.unwrap();
+    let content: Vec<String> = sqlx::query_scalar(
+        "SELECT content FROM notification_outbox WHERE event_type='reservation.no_show'",
+    )
+    .fetch_all(&f.state.pool)
+    .await
+    .unwrap();
+    assert_eq!(content.len(), 1);
+    assert!(content[0].contains("仍未检测到本人 GPU 进程"));
+    assert!(!content[0].contains("签到"));
+    f.close().await;
+}
+
+#[tokio::test]
 async fn sqlite_api_concurrency_boundaries_and_persistence() {
     let f = Fixture::new().await;
     for path in [
@@ -246,7 +337,7 @@ async fn sqlite_same_owner_peak_and_reservation_actions() {
         )
         .await
         .0,
-        StatusCode::NO_CONTENT
+        StatusCode::NOT_FOUND
     );
     assert_eq!(
         call(
@@ -323,6 +414,136 @@ async fn sqlite_agent_snapshot_replay_and_user_sync() {
     .await
     .unwrap();
     assert_eq!(count, 1);
+    f.close().await;
+}
+
+#[tokio::test]
+async fn sqlite_usage_alerts_use_markdown_resource_details() {
+    let f = Fixture::new().await;
+    let now = Utc::now();
+    let (status, booking, _) = call(
+        &f.app,
+        Some(&f.user),
+        "POST",
+        "/reservations",
+        f.booking(now + Duration::hours(1), now + Duration::hours(2)),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED);
+    let id = Uuid::parse_str(booking["id"].as_str().unwrap()).unwrap();
+    sqlx::query("UPDATE reservations SET starts_at=?2,ends_at=?3 WHERE id=?1")
+        .bind(id)
+        .bind(db::timestamp(now - Duration::hours(1)))
+        .bind(db::timestamp(now - Duration::minutes(1)))
+        .execute(&f.state.pool)
+        .await
+        .unwrap();
+    sqlx::query(
+        "UPDATE reservation_allocations SET starts_at=?2,ends_at=?3 WHERE reservation_id=?1",
+    )
+    .bind(id)
+    .bind(db::timestamp(now - Duration::hours(1)))
+    .bind(db::timestamp(now - Duration::minutes(1)))
+    .execute(&f.state.pool)
+    .await
+    .unwrap();
+    sqlx::query("INSERT INTO current_processes(gpu_id,pid,username,command,memory_used_mb,sampled_at) VALUES(?1,42,'alice','python',100,?2)").bind(f.gpu).bind(db::timestamp(now)).execute(&f.state.pool).await.unwrap();
+    worker::tick(&f.state, &reqwest::Client::new())
+        .await
+        .unwrap();
+    worker::tick(&f.state, &reqwest::Client::new())
+        .await
+        .unwrap();
+    for event in ["usage.overrun", "usage.unreserved"] {
+        let messages: Vec<String> =
+            sqlx::query_scalar("SELECT content FROM notification_outbox WHERE event_type=?1")
+                .bind(event)
+                .fetch_all(&f.state.pool)
+                .await
+                .unwrap();
+        assert_eq!(messages.len(), 1);
+        assert!(messages[0].starts_with("### GPUDeck · "));
+        assert!(messages[0].contains("<font color=\"warning\">"));
+        assert!(messages[0].contains("TestNode / GPU 0"));
+        assert!(messages[0].contains("[打开 GPUDeck]"));
+    }
+    f.close().await;
+}
+
+#[tokio::test]
+async fn sqlite_wecom_posts_markdown_and_keeps_legacy_text() {
+    let f = Fixture::new().await;
+    let (sender, mut received) = tokio::sync::mpsc::channel::<Value>(4);
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let app = Router::new().route(
+        "/webhook",
+        axum::routing::post(move |axum::Json(body): axum::Json<Value>| {
+            let sender = sender.clone();
+            async move {
+                sender.send(body).await.unwrap();
+                axum::Json(json!({"errcode":0,"errmsg":"ok"}))
+            }
+        }),
+    );
+    let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+    sqlx::query("UPDATE users SET wecom_user_id='alice_wecom' WHERE username='alice'")
+        .execute(&f.state.pool)
+        .await
+        .unwrap();
+    let (status, _, _) = call(
+        &f.app,
+        Some(&f.user),
+        "POST",
+        "/reservations",
+        f.booking(
+            Utc::now() + Duration::hours(1),
+            Utc::now() + Duration::hours(2),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED);
+    sqlx::query("INSERT INTO notification_outbox(id,event_type,dedupe_key,content,mentioned_user_ids) VALUES(?1,'legacy','legacy','旧版待发送通知',?2)")
+        .bind(Uuid::new_v4()).bind(json!(["alice_wecom"])).execute(&f.state.pool).await.unwrap();
+    let state = AppState {
+        pool: f.state.pool.clone(),
+        public_url: f.state.public_url.clone(),
+        secure_cookie: false,
+        wecom_webhook: Some(format!("http://{address}/webhook")),
+    };
+    let client = reqwest::Client::builder().no_proxy().build().unwrap();
+    worker::tick(&state, &client).await.unwrap();
+    let first = received.try_recv().unwrap();
+    let second = received.try_recv().unwrap();
+    let markdown = if first["msgtype"] == "markdown" {
+        &first
+    } else {
+        &second
+    };
+    let legacy = if first["msgtype"] == "text" {
+        &first
+    } else {
+        &second
+    };
+    assert_eq!(markdown["msgtype"], "markdown");
+    let content = markdown["markdown"]["content"].as_str().unwrap();
+    assert!(content.contains("预约已创建"));
+    assert!(content.contains("TestNode / GPU 0"));
+    assert!(content.contains("<@alice_wecom>"));
+    assert!(content.contains("[打开 GPUDeck]"));
+    assert!(content.len() <= 4096);
+    assert_eq!(legacy["text"]["content"], "旧版待发送通知");
+    assert_eq!(legacy["text"]["mentioned_list"], json!(["alice_wecom"]));
+    worker::tick(&state, &client).await.unwrap();
+    assert!(received.try_recv().is_err());
+    let sent: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM notification_outbox WHERE sent_at IS NOT NULL")
+            .fetch_one(&f.state.pool)
+            .await
+            .unwrap();
+    assert_eq!(sent, 2);
+    server.abort();
+    server.await.unwrap_err();
     f.close().await;
 }
 
@@ -405,6 +626,8 @@ async fn sqlite_settings_password_and_worker() {
     .fetch_one(&f.state.pool)
     .await
     .unwrap();
+    assert!(reminder.starts_with("### GPUDeck · 预约即将开始"));
+    assert!(reminder.contains("TestNode / GPU 0"));
     assert!(reminder.contains(&format!(
         "北京时间 UTC+8：{}",
         worker::beijing_time(upcoming)
@@ -412,6 +635,8 @@ async fn sqlite_settings_password_and_worker() {
     assert!(reminder.contains("通知时间（北京时间 UTC+8）"));
     let created: String = sqlx::query_scalar("SELECT content FROM notification_outbox WHERE event_type='reservation.created' ORDER BY created_at DESC LIMIT 1")
         .fetch_one(&f.state.pool).await.unwrap();
+    assert!(created.starts_with("### GPUDeck · 预约已创建"));
+    assert!(created.contains("TestNode / GPU 0"));
     assert!(created.contains(&format!(
         "北京时间 UTC+8：{} 至 {}",
         worker::beijing_time(upcoming),

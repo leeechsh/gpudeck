@@ -6,6 +6,10 @@
 
 # GPUDeck
 
+Hub 预约无需手动签到：每 10 秒检查一次近期 GPU 进程，当预约时段内任意一张所预约 GPU 上的进程 Linux 用户名与预约人的 Linux 用户名一致时，自动记录已开始使用。仅采用最近 2 分钟且不早于预约开始时间的采样；首次检测记录会保留。预约开始 15 分钟仍未检测到匹配进程时提醒一次，不自动释放预约。节点离线时无法确认实际使用情况。
+
+企业微信推送使用 [官方文档](https://developer.work.weixin.qq.com/document/path/99110) 支持的普通 Markdown：统一标题、状态颜色、用户／项目／GPU／北京时间和 Hub 链接；已配置企业微信用户 ID 时通过 `<@userid>` 提醒对应成员。新消息遵守 4096 UTF-8 字节限制，防止用户填写的内容注入链接或 @ 提醒；升级前队列中的纯文本消息仍按原格式发送。事件触发、去重和重试逻辑不变。
+
 **Collaborative GPU Resource Management for Research Labs and AI Teams**
 
 面向研究实验室与 AI 团队的协作式 GPU 资源管理平台。将多台服务器的 GPU 状态、人员占用、预约日历和使用统计集中到一个 Web 门户，无需部署 Slurm。

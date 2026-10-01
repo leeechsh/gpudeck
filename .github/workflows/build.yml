@@ -13,9 +13,6 @@ on:
         required: true
         type: boolean
         default: true
-  push:
-    tags:
-      - "v*"
 
 permissions:
   contents: read

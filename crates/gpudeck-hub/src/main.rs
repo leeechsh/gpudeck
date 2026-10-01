@@ -1,6 +1,7 @@
 mod api;
 mod auth;
 mod db;
+mod notification;
 #[cfg(test)]
 mod storage_tests;
 mod web;

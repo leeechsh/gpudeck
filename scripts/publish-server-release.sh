@@ -34,7 +34,14 @@ gh api "$release_api" > "$verify_dir/metadata.json"
 node scripts/verify-server-assets.mjs "$assets" "$verify_dir/metadata.json"
 notes="$verify_dir/notes.md"
 {
-    printf '## 主要更新\n\n- 自动构建并验证 Linux x86-64 与 ARM64 的 Hub 和 Agent。\n- 提供包含安装脚本的服务器部署包。\n\n## 下载\n\n'
+    printf '## 主要更新\n\n'
+    awk -v section="## $version" '
+        $0 == section { found=1; next }
+        /^## / && found { exit }
+        found && /^- / { print; count++; if (count == 5) exit }
+        END { if (!count) exit 1 }
+    ' docs/Version_overview.md
+    printf '\n## 下载\n\n'
     for arch in x86_64 aarch64; do
         printf -- '- `gpudeck-%s-linux-%s.tar.gz`：完整部署包。\n' "$version" "$arch"
         printf -- '- `gpudeck-hub-%s-linux-%s.gz`：内嵌 Web 的 Hub 可执行文件。\n' "$version" "$arch"

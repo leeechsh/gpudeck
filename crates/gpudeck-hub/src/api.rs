@@ -32,7 +32,6 @@ pub fn router() -> Router<Arc<AppState>> {
             get(list_reservations).post(create_reservation),
         )
         .route("/reservations/{id}/cancel", post(cancel_reservation))
-        .route("/reservations/{id}/check-in", post(check_in))
         .route("/reservations/{id}/end", post(end_early))
         .route("/statistics", get(statistics))
         .route("/agent/snapshot", post(agent_snapshot))
@@ -334,13 +333,39 @@ async fn create_reservation(
         &mut transaction,
         "reservation.created",
         &format!("reservation-created-{id}"),
-        &format!(
-            "{} 创建预约：{}（北京时间 UTC+8：{} 至 {}）\n{}",
-            user.display_name,
-            input.project_name,
-            crate::worker::beijing_time(input.starts_at),
-            crate::worker::beijing_time(input.ends_at),
-            state.public_url
+        &crate::notification::markdown(
+            "预约已创建",
+            "info",
+            &[
+                ("用户", user.display_name.clone()),
+                ("项目", input.project_name.clone()),
+                (
+                    "GPU",
+                    resources
+                        .iter()
+                        .map(|row| {
+                            format!(
+                                "{} / GPU {}",
+                                row.get::<String, _>("node_name"),
+                                row.get::<i32, _>("display_index")
+                            )
+                        })
+                        .collect::<Vec<_>>()
+                        .join("；"),
+                ),
+                (
+                    "预约时间",
+                    format!(
+                        "北京时间 UTC+8：{} 至 {}",
+                        crate::worker::beijing_time(input.starts_at),
+                        crate::worker::beijing_time(input.ends_at)
+                    ),
+                ),
+                ("用途", input.purpose.clone()),
+            ],
+            "无需手动签到，系统会根据所预约 GPU 上的本人进程自动识别使用。",
+            &state.public_url,
+            Utc::now(),
         ),
         user.wecom_user_id.clone(),
     )
@@ -366,24 +391,6 @@ async fn cancel_reservation(
 ) -> Result<StatusCode, ApiError> {
     user.require_csrf(&headers)?;
     mutate_reservation(&state, &user, id, "cancelled", "reservation.cancel").await?;
-    Ok(StatusCode::NO_CONTENT)
-}
-
-async fn check_in(
-    State(state): State<Arc<AppState>>,
-    user: AuthUser,
-    headers: HeaderMap,
-    Path(id): Path<Uuid>,
-) -> Result<StatusCode, ApiError> {
-    user.require_csrf(&headers)?;
-    let affected = sqlx::query("UPDATE reservations SET checked_in_at=strftime('%Y-%m-%dT%H:%M:%fZ','now'),status='active',updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id=?1 AND owner_id=?2 AND status IN ('scheduled','active')")
-        .bind(id).bind(user.id).execute(&state.pool).await?.rows_affected();
-    if affected == 0 {
-        return Err(ApiError(
-            StatusCode::NOT_FOUND,
-            "预约不存在或不可签到".into(),
-        ));
-    }
     Ok(StatusCode::NO_CONTENT)
 }
 

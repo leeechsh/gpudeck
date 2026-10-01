@@ -30,6 +30,7 @@ elif [[ "$2" == download ]]; then
   while [[ $# -gt 0 ]]; do case "$1" in --pattern) name=$2;shift 2;; --dir) dest=$2;shift 2;; *) shift;; esac; done
   cp "$TEST_RELEASE_DIR/assets/$name" "$dest/$name"
 elif [[ "$2" == edit ]]; then
+  while [[ $# -gt 0 ]]; do case "$1" in --notes-file) cp "$2" "$TEST_RELEASE_DIR/notes.md"; shift 2;; *) shift;; esac; done
   touch "$TEST_RELEASE_DIR/published"
 elif [[ "$2" != upload ]]; then exit 45
 fi
@@ -37,5 +38,10 @@ fi
   const result=spawnSync('bash',['scripts/publish-server-release.sh',assets],{env:{...process.env,PATH:bin+':'+process.env.PATH,TEST_RELEASE_DIR:dir,RELEASE_TAG:'v'+version,GITHUB_REPOSITORY:'leeechsh/gpudeck'},encoding:'utf8'})
   assert.equal(result.status,0,result.stdout+result.stderr)
   assert.equal(fs.existsSync(path.join(dir,'published')),true)
+  const notes=fs.readFileSync(path.join(dir,'notes.md'),'utf8')
+  const section=fs.readFileSync('docs/Version_overview.md','utf8').split('## '+version+'\n')[1].split('\n## ')[0]
+  for(const line of section.split('\n').filter(line=>line.startsWith('- ')).slice(0,5))assert.ok(notes.includes(line))
+  assert.match(notes,/## 主要更新/)
+  assert.match(notes,/## 下载/)
   console.log('Draft-release ID metadata lookup and eight-asset verification passed (mock GitHub; no external writes).')
 } finally {fs.rmSync(dir,{recursive:true,force:true})}
