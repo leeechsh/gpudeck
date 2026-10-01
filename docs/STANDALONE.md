@@ -1,5 +1,7 @@
 # 单可执行文件部署
 
+全新服务器安装请使用 [Hub 与 Agent 快速部署](QUICKSTART.md)，下文的迁移脚本仅用于原有当前服务器。
+
 Hub 将 Web 资源内嵌到同一个 Linux 可执行文件，运行时不需要 Docker、Node.js、Caddy 或 PostgreSQL。SQLite 数据和配置仍是外部文件；这不是所有平台通用的完全静态二进制，需要与构建环境兼容的 Linux/glibc。
 
 ## 构建

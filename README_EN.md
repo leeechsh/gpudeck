@@ -39,7 +39,7 @@ Find the right GPU before launching a job, monitor resources and processes while
 
 ## Download
 
-Current development version: **v2.8.0**. See [standalone/systemd deployment](docs/STANDALONE.md) or [Docker deployment](docs/DEPLOYMENT.md); desktop installers will be published through [GitHub Releases](https://github.com/leeechsh/gpudeck/releases).
+Current development version: **v2.9.0**. See [fresh Hub/Agent quick deployment](docs/QUICKSTART.md) or [existing standalone/systemd deployment](docs/STANDALONE.md); desktop installers will be published through [GitHub Releases](https://github.com/leeechsh/gpudeck/releases).
 
 ## A Note from the Author
 

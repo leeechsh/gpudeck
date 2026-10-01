@@ -16,11 +16,12 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - run: npm ci
       - run: npm test
-      - run: bash deploy/build-standalone.sh
+      - run: node scripts/test-fresh-installers.mjs
+      - run: bash deploy/build-server-bundle.sh
       - run: cargo test --locked --workspace
       - run: cargo fmt --all --check
-      - run: bash -n deploy/build-standalone.sh deploy/install-current-hub-root.sh deploy/upgrade-current-hub-root.sh
+      - run: bash -n deploy/*.sh
       - uses: actions/upload-artifact@v4
         with:
           name: gpudeck-hub-linux-x86_64
-          path: target/release/gpudeck-hub
+          path: target/server-bundles/*.tar.gz
