@@ -866,7 +866,8 @@ async fn sqlite_usage_alerts_use_markdown_resource_details() {
                 .await
                 .unwrap();
         assert_eq!(messages.len(), 1);
-        assert!(messages[0].starts_with("### GPUDeck · "));
+        assert!(messages[0].starts_with("<font color=\"warning\">"));
+        assert!(!messages[0].contains("### GPUDeck"));
         assert!(messages[0].contains("<font color=\"warning\">"));
         assert!(messages[0].contains("TestNode / GPU 0"));
         assert!(messages[0].contains("[打开 GPUDeck]"));
@@ -1037,7 +1038,7 @@ async fn sqlite_settings_password_and_worker() {
     assert_eq!(count, 0);
     let created: String = sqlx::query_scalar("SELECT content FROM notification_outbox WHERE event_type='reservation.created' ORDER BY created_at DESC LIMIT 1")
         .fetch_one(&f.state.pool).await.unwrap();
-    assert!(created.starts_with("### GPUDeck · 预约已创建"));
+    assert!(created.starts_with("<font color=\"info\">预约已创建</font>"));
     assert!(created.contains("TestNode / GPU 0"));
     assert!(created.contains(&format!(
         "{} 至 {}",
