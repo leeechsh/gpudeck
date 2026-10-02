@@ -44,7 +44,7 @@ pub(crate) fn markdown(
     public_url: &str,
     now: DateTime<Utc>,
 ) -> String {
-    let mut content = format!("### GPUDeck · {title}\n<font color=\"{color}\">{title}</font>\n");
+    let mut content = format!("<font color=\"{color}\">{title}</font>\n");
     for (label, value) in fields.iter().take(5) {
         content.push_str(&format!("\n> **{label}**：{}", field(value)));
     }
@@ -65,7 +65,8 @@ pub(crate) fn markdown(
 }
 
 pub(crate) fn payload(content: &str, mentioned: &[String]) -> Value {
-    if content.starts_with("### GPUDeck · ") {
+    // Keep old queued markdown recognizable while new messages use one title.
+    if content.starts_with("<font color=\"") || content.starts_with("### GPUDeck · ") {
         // Reserve room for mentions, and enforce the documented byte limit.
         let mentions = mentioned
             .iter()
@@ -107,6 +108,9 @@ mod tests {
             "2026-10-01T18:30:00Z".parse().unwrap(),
         );
         assert!(content.contains("2026-10-02 02:30"));
+        assert!(content.starts_with("<font color=\"info\">预约已创建</font>"));
+        assert_eq!(content.matches("预约已创建").count(), 1);
+        assert!(!content.contains("### GPUDeck"));
         assert!(content.contains("时间：2026-10-02 02:30"));
         assert!(!content.contains("通知时间（UTC+8）"));
         assert!(content.contains("[打开 GPUDeck](https://test.example/)"));
