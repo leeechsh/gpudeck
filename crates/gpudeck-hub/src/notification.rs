@@ -118,7 +118,7 @@ mod tests {
         assert_eq!(content.matches("预约已创建").count(), 1);
         assert!(!content.contains("### GPUDeck"));
         assert!(content.contains("时间：2026-10-02 02:30"));
-        assert!(!content.contains("时间："));
+        assert!(!content.contains("通知时间（UTC+8）"));
         assert!(content.contains("[打开 GPUDeck](https://test.example/)"));
         assert!(!content.contains("<@all>"));
         assert!(!content.contains("**x**"));
