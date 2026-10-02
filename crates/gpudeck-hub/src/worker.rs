@@ -148,12 +148,12 @@ async fn enqueue_policy_events(state: &AppState) -> anyhow::Result<()> {
                 "reservation.no_show" => (
                     "预约尚未检测到使用",
                     "warning",
-                    "预约开始 15 分钟仍未检测到本人 GPU 进程。开始满 30 分钟且仍未使用时，系统将自动释放预约。节点离线或采样过期时暂停自动释放。",
+                    "预约开始 15 分钟仍未检测到本人 GPU 进程。开始 30 分钟且仍未使用时，系统将自动释放预约。",
                 ),
                 _ => (
                     "预约已到期但任务仍在运行",
                     "warning",
-                    "请尽快结束任务或联系团队协调。系统不会自动续期或终止进程。",
+                    "请尽快结束任务或联系团队协调。",
                 ),
             };
             let end: chrono::DateTime<Utc> =
@@ -228,7 +228,7 @@ async fn enqueue_policy_events(state: &AppState) -> anyhow::Result<()> {
             .join("；");
         sqlx::query("INSERT INTO notification_outbox(id,event_type,dedupe_key,content,mentioned_user_ids) VALUES(?1,'usage.unreserved',?2,?3,?4) ON CONFLICT(dedupe_key) DO NOTHING")
             .bind(Uuid::new_v4()).bind(format!("unreserved-user-{user}-{hour}"))
-            .bind(crate::notification::markdown("检测到未预约使用", "warning", &[("用户", user.clone()), ("占用汇总", format!("{} 张 GPU / {} 个进程", cards.len(), tasks.len())), ("GPU", gpu_summary), ("进程 PID", pid_summary)], "请补充预约或联系团队协调。系统仅通知，不会终止进程。资源或进程过多时摘要会截断，请打开 GPUDeck 查看完整占用。", &state.public_url, now))
+            .bind(crate::notification::markdown("检测到未预约使用", "warning", &[("用户", user.clone()), ("占用汇总", format!("{} 张 GPU / {} 个进程", cards.len(), tasks.len())), ("GPU", gpu_summary), ("进程 PID", pid_summary)], "请补充预约或联系团队协调。", &state.public_url, now))
             .bind(json!(mentioned.into_iter().collect::<Vec<_>>())).execute(&mut *tx).await?;
     }
     tx.commit().await?;
