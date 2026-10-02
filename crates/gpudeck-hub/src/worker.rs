@@ -41,7 +41,7 @@ pub(crate) async fn tick(state: &AppState, client: &reqwest::Client) -> anyhow::
     let Some(webhook) = &state.wecom_webhook else {
         return Ok(());
     };
-    let rows=sqlx::query("SELECT id,content,mentioned_user_ids,attempts FROM notification_outbox WHERE sent_at IS NULL AND next_attempt_at<=strftime('%Y-%m-%dT%H:%M:%fZ','now') AND attempts<5 ORDER BY created_at LIMIT 10").fetch_all(&state.pool).await?;
+    let rows=sqlx::query("SELECT id,content,mentioned_user_ids,attempts FROM notification_outbox WHERE event_type!='reservation.reminder' AND sent_at IS NULL AND next_attempt_at<=strftime('%Y-%m-%dT%H:%M:%fZ','now') AND attempts<5 ORDER BY created_at LIMIT 10").fetch_all(&state.pool).await?;
     for row in rows {
         let id: Uuid = row.get("id");
         let content: String = row.get("content");
@@ -124,11 +124,6 @@ async fn enqueue_policy_events(state: &AppState) -> anyhow::Result<()> {
     let mut tx = state.pool.begin_with("BEGIN IMMEDIATE").await?;
     let queries = [
         (
-            "reservation.reminder",
-            "reminder",
-            "SELECT r.id,u.display_name,r.project_name,r.starts_at,u.wecom_user_id FROM reservations r JOIN users u ON u.id=r.owner_id WHERE r.status='scheduled' AND r.starts_at BETWEEN strftime('%Y-%m-%dT%H:%M:%fZ','now','+14 minutes') AND strftime('%Y-%m-%dT%H:%M:%fZ','now','+16 minutes')",
-        ),
-        (
             "reservation.no_show",
             "no-show",
             "SELECT r.id,u.display_name,r.project_name,r.starts_at,u.wecom_user_id FROM reservations r JOIN users u ON u.id=r.owner_id WHERE r.status='active' AND r.checked_in_at IS NULL AND r.starts_at BETWEEN strftime('%Y-%m-%dT%H:%M:%fZ','now','-17 minutes') AND strftime('%Y-%m-%dT%H:%M:%fZ','now','-15 minutes')",
@@ -150,9 +145,6 @@ async fn enqueue_policy_events(state: &AppState) -> anyhow::Result<()> {
             let project: String = row.get("project_name");
             let start: chrono::DateTime<Utc> = row.get("starts_at");
             let (title, color, note) = match event {
-                "reservation.reminder" => {
-                    ("预约即将开始", "info", "约 15 分钟后开始，请准备任务。")
-                }
                 "reservation.no_show" => (
                     "预约尚未检测到使用",
                     "warning",

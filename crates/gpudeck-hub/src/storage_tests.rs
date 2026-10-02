@@ -832,6 +832,9 @@ async fn sqlite_wecom_posts_markdown_and_keeps_legacy_text() {
     assert_eq!(status, StatusCode::CREATED);
     sqlx::query("INSERT INTO notification_outbox(id,event_type,dedupe_key,content,mentioned_user_ids) VALUES(?1,'legacy','legacy','旧版待发送通知',?2)")
         .bind(Uuid::new_v4()).bind(json!(["alice_wecom"])).execute(&f.state.pool).await.unwrap();
+    // Previously queued upcoming reminders must not be delivered after upgrade.
+    sqlx::query("INSERT INTO notification_outbox(id,event_type,dedupe_key,content,mentioned_user_ids) VALUES(?1,'reservation.reminder','old-reminder','预约即将开始',?2)")
+        .bind(Uuid::new_v4()).bind(json!([])).execute(&f.state.pool).await.unwrap();
     let state = AppState {
         pool: f.state.pool.clone(),
         public_url: f.state.public_url.clone(),
@@ -855,6 +858,7 @@ async fn sqlite_wecom_posts_markdown_and_keeps_legacy_text() {
     assert_eq!(markdown["msgtype"], "markdown");
     let content = markdown["markdown"]["content"].as_str().unwrap();
     assert!(content.contains("预约已创建"));
+    assert!(content.contains("预约开始后超过 30 分钟仍未检测到本人 GPU 进程，将自动释放预约。"));
     assert!(content.contains("TestNode / GPU 0"));
     assert!(content.contains("<@alice_wecom>"));
     assert!(content.contains("[打开 GPUDeck]"));
@@ -946,19 +950,7 @@ async fn sqlite_settings_password_and_worker() {
     .fetch_one(&f.state.pool)
     .await
     .unwrap();
-    assert_eq!(count, 1);
-    let reminder: String = sqlx::query_scalar(
-        "SELECT content FROM notification_outbox WHERE event_type='reservation.reminder'",
-    )
-    .fetch_one(&f.state.pool)
-    .await
-    .unwrap();
-    assert!(reminder.starts_with("### GPUDeck · 预约即将开始"));
-    assert!(reminder.contains("TestNode / GPU 0"));
-    assert!(reminder.contains(&format!("{}", worker::beijing_time(upcoming))));
-    assert!(reminder.contains("通知时间（UTC+8）"));
-    assert!(!reminder.contains("北京时间"));
-    assert!(!reminder.contains("无需手动签到"));
+    assert_eq!(count, 0);
     let created: String = sqlx::query_scalar("SELECT content FROM notification_outbox WHERE event_type='reservation.created' ORDER BY created_at DESC LIMIT 1")
         .fetch_one(&f.state.pool).await.unwrap();
     assert!(created.starts_with("### GPUDeck · 预约已创建"));
@@ -970,6 +962,7 @@ async fn sqlite_settings_password_and_worker() {
     )));
     assert!(!created.contains("北京时间"));
     assert!(!created.contains("无需手动签到"));
+    assert!(created.contains("预约开始后超过 30 分钟仍未检测到本人 GPU 进程，将自动释放预约。"));
     let seconds: i64 = sqlx::query_scalar("SELECT active_seconds FROM usage_hours")
         .fetch_one(&f.state.pool)
         .await
