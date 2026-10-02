@@ -52,7 +52,7 @@ pub(crate) fn markdown(
         content.push_str(&format!("\n\n{}", field(note)));
     }
     content.push_str(&format!(
-        "\n\n<font color=\"comment\">通知时间（UTC+8）：{}</font>",
+        "\n\n<font color=\"comment\">时间：{}</font>",
         crate::worker::beijing_time(now)
     ));
     if let Ok(url) = reqwest::Url::parse(public_url) {
@@ -107,6 +107,8 @@ mod tests {
             "2026-10-01T18:30:00Z".parse().unwrap(),
         );
         assert!(content.contains("2026-10-02 02:30"));
+        assert!(content.contains("时间：2026-10-02 02:30"));
+        assert!(!content.contains("通知时间（UTC+8）"));
         assert!(content.contains("[打开 GPUDeck](https://test.example/)"));
         assert!(!content.contains("<@all>"));
         assert!(!content.contains("**x**"));
@@ -152,7 +154,7 @@ mod tests {
         let result = message["markdown"]["content"].as_str().unwrap();
         assert!(result.len() <= 4096);
         assert!(result.contains(&format!("[打开 GPUDeck]({url})")));
-        assert!(result.contains("通知时间（UTC+8）"));
+        assert!(result.contains("<font color=\"comment\">时间："));
         assert!(result.contains("</font>"));
         let invalid = markdown(
             "预约已创建",
