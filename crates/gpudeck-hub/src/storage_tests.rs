@@ -360,6 +360,81 @@ async fn sqlite_same_owner_peak_and_reservation_actions() {
 }
 
 #[tokio::test]
+async fn sqlite_end_future_reservation_preserves_valid_interval_and_releases_gpu() {
+    let f = Fixture::new().await;
+    let start = Utc::now() + Duration::hours(2);
+    let end = start + Duration::hours(1);
+    let booking = f.booking(start, end);
+    let (status, created, _) = call(
+        &f.app,
+        Some(&f.user),
+        "POST",
+        "/reservations",
+        booking.clone(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED);
+    let id = created["id"].as_str().unwrap();
+    assert_eq!(
+        call(
+            &f.app,
+            Some(&f.admin),
+            "POST",
+            &format!("/reservations/{id}/end"),
+            Value::Null
+        )
+        .await
+        .0,
+        StatusCode::NOT_FOUND
+    );
+    let result = call(
+        &f.app,
+        Some(&f.user),
+        "POST",
+        &format!("/reservations/{id}/end"),
+        Value::Null,
+    )
+    .await;
+    assert_eq!(result.0, StatusCode::NO_CONTENT, "{:?}", result.1);
+    let row =
+        sqlx::query("SELECT status,starts_at,ends_at,ended_early_at FROM reservations WHERE id=?1")
+            .bind(Uuid::parse_str(id).unwrap())
+            .fetch_one(&f.state.pool)
+            .await
+            .unwrap();
+    assert_eq!(row.get::<String, _>("status"), "completed");
+    assert_eq!(row.get::<String, _>("starts_at"), db::timestamp(start));
+    assert_eq!(row.get::<String, _>("ends_at"), db::timestamp(end));
+    assert!(row.get::<Option<String>, _>("ended_early_at").is_some());
+    let allocations: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM reservation_allocations WHERE reservation_id=?1")
+            .bind(Uuid::parse_str(id).unwrap())
+            .fetch_one(&f.state.pool)
+            .await
+            .unwrap();
+    assert_eq!(allocations, 0);
+    assert_eq!(
+        call(
+            &f.app,
+            Some(&f.user),
+            "POST",
+            &format!("/reservations/{id}/end"),
+            Value::Null
+        )
+        .await
+        .0,
+        StatusCode::NOT_FOUND
+    );
+    assert_eq!(
+        call(&f.app, Some(&f.user), "POST", "/reservations", booking)
+            .await
+            .0,
+        StatusCode::CREATED
+    );
+    f.close().await;
+}
+
+#[tokio::test]
 async fn sqlite_agent_snapshot_replay_and_user_sync() {
     let f = Fixture::new().await;
     sqlx::query("UPDATE nodes SET token_hash=?1 WHERE id=?2")
