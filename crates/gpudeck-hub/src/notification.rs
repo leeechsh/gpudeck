@@ -46,7 +46,13 @@ pub(crate) fn markdown(
 ) -> String {
     let mut content = format!("<font color=\"{color}\">{title}</font>\n");
     for (label, value) in fields.iter().take(5) {
-        content.push_str(&format!("\n> **{label}**：{}", field(value)));
+        let value = field(value);
+        let value = if *label == "用户" {
+            format!("<font color=\"#800080\">**{value}**</font>")
+        } else {
+            value
+        };
+        content.push_str(&format!("\n> **{label}**：{value}"));
     }
     if !note.is_empty() {
         content.push_str(&format!("\n\n{}", field(note)));
@@ -112,7 +118,7 @@ mod tests {
         assert_eq!(content.matches("预约已创建").count(), 1);
         assert!(!content.contains("### GPUDeck"));
         assert!(content.contains("时间：2026-10-02 02:30"));
-        assert!(!content.contains("通知时间（UTC+8）"));
+        assert!(!content.contains("时间："));
         assert!(content.contains("[打开 GPUDeck](https://test.example/)"));
         assert!(!content.contains("<@all>"));
         assert!(!content.contains("**x**"));
@@ -126,6 +132,29 @@ mod tests {
                 .ends_with("提醒：<@alice>")
         );
         assert!(message["markdown"].get("mentioned_list").is_none());
+    }
+
+    #[test]
+    fn usernames_are_bold_purple_and_escaped() {
+        let now = "2026-10-01T18:30:00Z".parse().unwrap();
+        for user in ["luoxin", "<@all>**x**"] {
+            let content = markdown(
+                "测试",
+                "info",
+                &[("用户", user.into()), ("项目", "Demo".into())],
+                "",
+                "https://test.example",
+                now,
+            );
+            assert!(content.contains(&format!(
+                "> **用户**：<font color=\"#800080\">**{}**</font>",
+                field(user)
+            )));
+            assert_eq!(content.matches("#800080").count(), 1);
+            assert!(content.contains("> **项目**：Demo"));
+            assert!(!content.contains("<@all>"));
+            assert_eq!(payload(&content, &[])["msgtype"], "markdown");
+        }
     }
 
     #[test]
