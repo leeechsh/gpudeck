@@ -207,6 +207,8 @@ async fn sqlite_automatically_detects_reservation_usage() {
     .unwrap();
     assert_eq!(content.len(), 1);
     assert!(content[0].contains("仍未检测到本人 GPU 进程"));
+    assert!(content[0].contains("开始 30 分钟且仍未使用时，系统将自动释放预约。"));
+    assert!(!content[0].contains("节点离线或采样过期"));
     assert!(!content[0].contains("签到"));
     f.close().await;
 }
@@ -868,6 +870,13 @@ async fn sqlite_usage_alerts_use_markdown_resource_details() {
         assert!(messages[0].contains("<font color=\"warning\">"));
         assert!(messages[0].contains("TestNode / GPU 0"));
         assert!(messages[0].contains("[打开 GPUDeck]"));
+        assert!(messages[0].contains(if event == "usage.overrun" {
+            "请尽快结束任务或联系团队协调。"
+        } else {
+            "请补充预约或联系团队协调。"
+        }));
+        assert!(!messages[0].contains("终止进程"));
+        assert!(!messages[0].contains("摘要会截断"));
     }
     f.close().await;
 }
