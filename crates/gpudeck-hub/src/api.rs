@@ -402,7 +402,9 @@ async fn end_early(
 ) -> Result<StatusCode, ApiError> {
     user.require_csrf(&headers)?;
     let mut transaction = state.pool.begin_with("BEGIN IMMEDIATE").await?;
-    let affected = sqlx::query("UPDATE reservations SET ended_early_at=strftime('%Y-%m-%dT%H:%M:%fZ','now'),ends_at=min(ends_at,strftime('%Y-%m-%dT%H:%M:%fZ','now')),status='completed',updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id=?1 AND owner_id=?2 AND status IN ('scheduled','active')")
+    // A future reservation can be ended too. Preserve its interval rather than
+    // moving ends_at before starts_at and violating the database constraint.
+    let affected = sqlx::query("UPDATE reservations SET ended_early_at=strftime('%Y-%m-%dT%H:%M:%fZ','now'),ends_at=CASE WHEN starts_at<strftime('%Y-%m-%dT%H:%M:%fZ','now') THEN min(ends_at,strftime('%Y-%m-%dT%H:%M:%fZ','now')) ELSE ends_at END,status='completed',updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id=?1 AND owner_id=?2 AND status IN ('scheduled','active')")
         .bind(id).bind(user.id).execute(&mut *transaction).await?.rows_affected();
     if affected == 0 {
         return Err(ApiError(
