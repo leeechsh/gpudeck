@@ -31,6 +31,13 @@ describe('reservation timeline', () => {
       expect(range()).toContain(dateInput(new Date(Date.now() + 12 * 3600000)).replace('T', ' '))
       let bufferStart = centeredTimelineStart(Date.now(), 24)
       const width = 968, day = 24 * 3600000
+      // Ignore browser scroll events during a resize before new geometry commits.
+      const beforeResize = range()
+      measure.mockReturnValue(3000)
+      scroller.scrollLeft = 0
+      await act(async () => scroller.dispatchEvent(new Event('scroll')))
+      expect(range()).toBe(beforeResize)
+      measure.mockReturnValue(1178)
       for (let index = 0; index < 10; index++) {
         scroller.scrollLeft = width * 1.8
         const expected = bufferStart + day * 1.8
