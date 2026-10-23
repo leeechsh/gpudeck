@@ -490,7 +490,7 @@ async fn sqlite_agent_snapshot_replay_and_user_sync() {
     .fetch_one(&f.state.pool)
     .await
     .unwrap();
-    assert_eq!(count, 1);
+    assert_eq!(count, 0);
     f.close().await;
 }
 
@@ -705,6 +705,102 @@ async fn sqlite_releases_unused_bookings_after_thirty_minutes() {
 }
 
 #[tokio::test]
+async fn sqlite_unreserved_usage_has_thirty_minute_grace_and_resets() {
+    let f = Fixture::new().await;
+    let client = reqwest::Client::new();
+    let now = Utc::now();
+    sqlx::query("INSERT INTO current_processes(gpu_id,pid,username,command,memory_used_mb,sampled_at) VALUES(?1,42,'alice','python',100,?2)")
+        .bind(f.gpu).bind(db::timestamp(now)).execute(&f.state.pool).await.unwrap();
+    for (pid, user) in [
+        (100, "root"),
+        (101, "nobody"),
+        (102, "daemon"),
+        (103, "0"),
+        (104, "999"),
+        (105, "65534"),
+        (106, "www-data"),
+    ] {
+        sqlx::query("INSERT INTO current_processes(gpu_id,pid,username,command,memory_used_mb,sampled_at) VALUES(?1,?2,?3,'service',100,?4)")
+            .bind(f.gpu).bind(pid).bind(user).bind(db::timestamp(now)).execute(&f.state.pool).await.unwrap();
+    }
+    worker::tick(&f.state, &client).await.unwrap();
+    let tracked: Vec<String> = sqlx::query_scalar("SELECT username FROM unreserved_usage")
+        .fetch_all(&f.state.pool)
+        .await
+        .unwrap();
+    assert_eq!(tracked, vec!["alice"]);
+    for (minutes, expected) in [(0, 0), (29, 0), (30, 1), (31, 1)] {
+        sqlx::query("UPDATE unreserved_usage SET first_seen_at=?1 WHERE username='alice'")
+            .bind(db::timestamp(now - Duration::minutes(minutes)))
+            .execute(&f.state.pool)
+            .await
+            .unwrap();
+        worker::tick(&f.state, &client).await.unwrap();
+        let count: i64 = sqlx::query_scalar(
+            "SELECT count(*) FROM notification_outbox WHERE event_type='usage.unreserved'",
+        )
+        .fetch_one(&f.state.pool)
+        .await
+        .unwrap();
+        assert_eq!(count, expected, "{minutes} minutes");
+    }
+    // Missing fresh telemetry ends continuity; returning starts a new grace period.
+    sqlx::query("UPDATE current_processes SET sampled_at=?1")
+        .bind(db::timestamp(now - Duration::minutes(3)))
+        .execute(&f.state.pool)
+        .await
+        .unwrap();
+    worker::tick(&f.state, &client).await.unwrap();
+    let count: i64 = sqlx::query_scalar("SELECT count(*) FROM unreserved_usage")
+        .fetch_one(&f.state.pool)
+        .await
+        .unwrap();
+    assert_eq!(count, 0);
+    sqlx::query("UPDATE current_processes SET sampled_at=?1")
+        .bind(db::timestamp(Utc::now()))
+        .execute(&f.state.pool)
+        .await
+        .unwrap();
+    worker::tick(&f.state, &client).await.unwrap();
+    // A worker outage also resets rather than counting unobserved time.
+    sqlx::query("UPDATE unreserved_usage SET first_seen_at=?1,last_seen_at=?2")
+        .bind(db::timestamp(now - Duration::hours(1)))
+        .bind(db::timestamp(now - Duration::minutes(3)))
+        .execute(&f.state.pool)
+        .await
+        .unwrap();
+    worker::tick(&f.state, &client).await.unwrap();
+    let first: chrono::DateTime<Utc> =
+        sqlx::query_scalar("SELECT first_seen_at FROM unreserved_usage WHERE username='alice'")
+            .fetch_one(&f.state.pool)
+            .await
+            .unwrap();
+    assert!(first >= now);
+    // A current matching booking resets the grace period, without manual sign-in.
+    let start =
+        chrono::DateTime::from_timestamp(now.timestamp().div_euclid(1800) * 1800, 0).unwrap();
+    assert_eq!(
+        call(
+            &f.app,
+            Some(&f.user),
+            "POST",
+            "/reservations",
+            f.booking(start, start + Duration::hours(1))
+        )
+        .await
+        .0,
+        StatusCode::CREATED
+    );
+    worker::tick(&f.state, &client).await.unwrap();
+    let count: i64 = sqlx::query_scalar("SELECT count(*) FROM unreserved_usage")
+        .fetch_one(&f.state.pool)
+        .await
+        .unwrap();
+    assert_eq!(count, 0);
+    f.close().await;
+}
+
+#[tokio::test]
 async fn sqlite_unreserved_alerts_aggregate_per_user_across_nodes_and_gpus() {
     let f = Fixture::new().await;
     let now = Utc::now();
@@ -731,6 +827,14 @@ async fn sqlite_unreserved_alerts_aggregate_per_user_across_nodes_and_gpus() {
         sqlx::query("INSERT INTO current_processes(gpu_id,pid,username,command,memory_used_mb,sampled_at) VALUES(?1,?2,?3,'python',100,?4)")
             .bind(gpu).bind(pid).bind(user).bind(db::timestamp(sampled)).execute(&f.state.pool).await.unwrap();
     }
+    worker::tick(&f.state, &reqwest::Client::new())
+        .await
+        .unwrap();
+    sqlx::query("UPDATE unreserved_usage SET first_seen_at=?1")
+        .bind(db::timestamp(now - Duration::minutes(31)))
+        .execute(&f.state.pool)
+        .await
+        .unwrap();
     worker::tick(&f.state, &reqwest::Client::new())
         .await
         .unwrap();
@@ -852,6 +956,14 @@ async fn sqlite_usage_alerts_use_markdown_resource_details() {
     .await
     .unwrap();
     sqlx::query("INSERT INTO current_processes(gpu_id,pid,username,command,memory_used_mb,sampled_at) VALUES(?1,42,'alice','python',100,?2)").bind(f.gpu).bind(db::timestamp(now)).execute(&f.state.pool).await.unwrap();
+    worker::tick(&f.state, &reqwest::Client::new())
+        .await
+        .unwrap();
+    sqlx::query("UPDATE unreserved_usage SET first_seen_at=?1")
+        .bind(db::timestamp(now - Duration::minutes(31)))
+        .execute(&f.state.pool)
+        .await
+        .unwrap();
     worker::tick(&f.state, &reqwest::Client::new())
         .await
         .unwrap();

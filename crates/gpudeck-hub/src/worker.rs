@@ -15,6 +15,42 @@ pub(crate) fn beijing_time(time: DateTime<Utc>) -> String {
         .to_string()
 }
 
+fn is_system_account(username: &str) -> bool {
+    matches!(
+        username,
+        "root"
+            | "nobody"
+            | "daemon"
+            | "bin"
+            | "sys"
+            | "sync"
+            | "games"
+            | "man"
+            | "lp"
+            | "mail"
+            | "news"
+            | "uucp"
+            | "proxy"
+            | "www-data"
+            | "backup"
+            | "list"
+            | "irc"
+            | "gnats"
+            | "sshd"
+            | "messagebus"
+            | "systemd-network"
+            | "systemd-resolve"
+            | "systemd-timesync"
+            | "mysql"
+            | "postgres"
+            | "redis"
+            | "_apt"
+            | "polkitd"
+    ) || username
+        .parse::<u32>()
+        .is_ok_and(|uid| uid < 1000 || uid == 65534)
+}
+
 pub fn spawn(state: Arc<AppState>) {
     tokio::spawn(async move {
         let client = reqwest::Client::new();
@@ -191,9 +227,27 @@ async fn enqueue_policy_events(state: &AppState) -> anyhow::Result<()> {
     let rows=sqlx::query("SELECT p.gpu_id,g.node_id,p.username,p.pid,n.name,g.display_index,u.wecom_user_id FROM current_processes p JOIN gpus g ON g.id=p.gpu_id JOIN nodes n ON n.id=g.node_id LEFT JOIN users u ON u.linux_username=p.username WHERE p.sampled_at>strftime('%Y-%m-%dT%H:%M:%fZ','now','-2 minutes') AND NOT EXISTS(SELECT 1 FROM reservation_allocations a JOIN reservations r ON r.id=a.reservation_id JOIN users ru ON ru.id=r.owner_id WHERE a.gpu_id=p.gpu_id AND r.status='active' AND a.starts_at<=strftime('%Y-%m-%dT%H:%M:%fZ','now') AND a.ends_at>strftime('%Y-%m-%dT%H:%M:%fZ','now') AND ru.linux_username=p.username) ORDER BY p.pid").fetch_all(&mut *tx).await?;
     let mut users: BTreeMap<String, Vec<sqlx::sqlite::SqliteRow>> = BTreeMap::new();
     for row in rows {
-        users.entry(row.get("username")).or_default().push(row);
+        let username: String = row.get("username");
+        if !is_system_account(&username) {
+            users.entry(username).or_default().push(row);
+        }
     }
+    // End the grace period record when no fresh unreserved use remains.
+    let usernames: Vec<&String> = users.keys().collect();
+    sqlx::query(
+        "DELETE FROM unreserved_usage WHERE username NOT IN (SELECT value FROM json_each(?1))",
+    )
+    .bind(json!(usernames))
+    .execute(&mut *tx)
+    .await?;
     for (user, processes) in users {
+        // Persist across restarts, but reset after a telemetry/worker gap.
+        let first_seen: DateTime<Utc> = sqlx::query_scalar("INSERT INTO unreserved_usage(username,first_seen_at,last_seen_at) VALUES(?1,?2,?2) ON CONFLICT(username) DO UPDATE SET first_seen_at=CASE WHEN last_seen_at<?3 THEN excluded.first_seen_at ELSE first_seen_at END,last_seen_at=excluded.last_seen_at RETURNING first_seen_at")
+            .bind(&user).bind(timestamp(now)).bind(timestamp(now-ChronoDuration::minutes(2)))
+            .fetch_one(&mut *tx).await?;
+        if now - first_seen < ChronoDuration::minutes(30) {
+            continue;
+        }
         let mentioned: Option<String> = processes[0].get("wecom_user_id");
         // A PID is node-local and may appear on multiple GPUs. Keep the GPU
         // association while counting a shared multi-GPU process only once.
