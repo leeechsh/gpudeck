@@ -67,9 +67,12 @@ pub(crate) async fn tick(state: &AppState, client: &reqwest::Client) -> anyhow::
     let mut reservation_tx = state.pool.begin_with("BEGIN IMMEDIATE").await?;
     sqlx::query("UPDATE reservations SET status='active',updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE status='scheduled' AND starts_at<=strftime('%Y-%m-%dT%H:%M:%fZ','now') AND ends_at>strftime('%Y-%m-%dT%H:%M:%fZ','now')").execute(&mut *reservation_tx).await?;
     sqlx::query("UPDATE reservations SET status='completed',updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE status IN ('scheduled','active') AND ends_at<=strftime('%Y-%m-%dT%H:%M:%fZ','now')").execute(&mut *reservation_tx).await?;
-    // First observed use on any allocated GPU starts the reservation's usage
-    // record. Ignore other users, stale samples and samples before its start.
-    sqlx::query("UPDATE reservations AS r SET checked_in_at=strftime('%Y-%m-%dT%H:%M:%fZ','now'),updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE r.status='active' AND r.checked_in_at IS NULL AND r.starts_at<=strftime('%Y-%m-%dT%H:%M:%fZ','now') AND r.ends_at>strftime('%Y-%m-%dT%H:%M:%fZ','now') AND EXISTS(SELECT 1 FROM reservation_allocations a JOIN current_processes p ON p.gpu_id=a.gpu_id JOIN users u ON u.id=r.owner_id WHERE a.reservation_id=r.id AND p.username=u.linux_username AND p.sampled_at>=r.starts_at AND p.sampled_at>strftime('%Y-%m-%dT%H:%M:%fZ','now','-2 minutes') AND p.sampled_at<=strftime('%Y-%m-%dT%H:%M:%fZ','now'))").execute(&mut *reservation_tx).await?;
+    // Persist use independently for each GPU, even when the process later exits.
+    sqlx::query("UPDATE reservation_allocations AS a SET first_used_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE a.first_used_at IS NULL AND EXISTS(SELECT 1 FROM reservations r JOIN users u ON u.id=r.owner_id JOIN current_processes p ON p.gpu_id=a.gpu_id WHERE r.id=a.reservation_id AND r.status='active' AND r.starts_at<=strftime('%Y-%m-%dT%H:%M:%fZ','now') AND r.ends_at>strftime('%Y-%m-%dT%H:%M:%fZ','now') AND p.username=u.linux_username AND p.sampled_at>=r.starts_at AND p.sampled_at>strftime('%Y-%m-%dT%H:%M:%fZ','now','-2 minutes') AND p.sampled_at<=strftime('%Y-%m-%dT%H:%M:%fZ','now'))")
+        .execute(&mut *reservation_tx).await?;
+    // Keep the existing reservation-level summary for API compatibility.
+    sqlx::query("UPDATE reservations AS r SET checked_in_at=(SELECT min(first_used_at) FROM reservation_allocations WHERE reservation_id=r.id),updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE r.status='active' AND r.checked_in_at IS NULL AND EXISTS(SELECT 1 FROM reservation_allocations WHERE reservation_id=r.id AND first_used_at IS NOT NULL)")
+        .execute(&mut *reservation_tx).await?;
     release_unused_reservations(state, &mut reservation_tx).await?;
     reservation_tx.commit().await?;
     enqueue_policy_events(state).await?;
@@ -116,42 +119,73 @@ async fn release_unused_reservations(
     state: &AppState,
     tx: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
 ) -> anyhow::Result<()> {
-    // Usage detection and release hold the same writer lock: a snapshot or
-    // booking cannot race between the decision and releasing its allocations.
-    // All allocated nodes must have fresh samples taken after the booking start.
-    let rows = sqlx::query("SELECT r.id,r.starts_at,r.ends_at,r.project_name,u.display_name,u.wecom_user_id FROM reservations r JOIN users u ON u.id=r.owner_id WHERE r.status='active' AND r.checked_in_at IS NULL AND r.starts_at<=strftime('%Y-%m-%dT%H:%M:%fZ','now','-30 minutes') AND EXISTS(SELECT 1 FROM reservation_allocations a WHERE a.reservation_id=r.id) AND NOT EXISTS(SELECT 1 FROM reservation_allocations a JOIN gpus g ON g.id=a.gpu_id JOIN nodes n ON n.id=g.node_id WHERE a.reservation_id=r.id AND (n.enabled=0 OR g.missing=1 OR n.last_seen_at IS NULL OR n.last_seen_at<=strftime('%Y-%m-%dT%H:%M:%fZ','now','-2 minutes') OR n.last_sample_at IS NULL OR n.last_sample_at<=strftime('%Y-%m-%dT%H:%M:%fZ','now','-2 minutes') OR n.last_sample_at<r.starts_at OR n.last_sample_at>strftime('%Y-%m-%dT%H:%M:%fZ','now') OR g.last_seen_at IS NULL OR g.last_seen_at<=strftime('%Y-%m-%dT%H:%M:%fZ','now','-2 minutes')))")
+    // A snapshot cannot race with usage detection or allocation deletion.
+    // Only fresh, enabled, present GPUs qualify; stale GPUs stay reserved.
+    let rows = sqlx::query("SELECT a.id AS allocation_id,a.gpu_id,r.id,r.starts_at,r.ends_at,r.project_name,u.display_name,u.wecom_user_id,n.name || ' / GPU ' || g.display_index AS gpu_label FROM reservation_allocations a JOIN reservations r ON r.id=a.reservation_id JOIN users u ON u.id=r.owner_id JOIN gpus g ON g.id=a.gpu_id JOIN nodes n ON n.id=g.node_id WHERE r.status='active' AND a.first_used_at IS NULL AND r.starts_at<=strftime('%Y-%m-%dT%H:%M:%fZ','now','-30 minutes') AND n.enabled=1 AND g.missing=0 AND n.last_seen_at>strftime('%Y-%m-%dT%H:%M:%fZ','now','-2 minutes') AND n.last_sample_at>strftime('%Y-%m-%dT%H:%M:%fZ','now','-2 minutes') AND n.last_sample_at>=r.starts_at AND n.last_sample_at<=strftime('%Y-%m-%dT%H:%M:%fZ','now') AND g.last_seen_at>strftime('%Y-%m-%dT%H:%M:%fZ','now','-2 minutes') ORDER BY r.id,a.id")
         .fetch_all(&mut **tx).await?;
+    let mut bookings: BTreeMap<Uuid, Vec<sqlx::sqlite::SqliteRow>> = BTreeMap::new();
     for row in rows {
-        let id: Uuid = row.get("id");
+        bookings.entry(row.get("id")).or_default().push(row);
+    }
+    for (id, cards) in bookings {
+        let row = &cards[0];
         let start: DateTime<Utc> = row.get("starts_at");
         let end: DateTime<Utc> = row.get("ends_at");
-        let gpus: Vec<String> = sqlx::query_scalar("SELECT n.name || ' / GPU ' || g.display_index FROM reservation_allocations a JOIN gpus g ON g.id=a.gpu_id JOIN nodes n ON n.id=g.node_id WHERE a.reservation_id=?1 ORDER BY n.name,g.display_index").bind(id).fetch_all(&mut **tx).await?;
+        let mut released_ids = Vec::new();
+        let mut allocation_ids = Vec::new();
+        let mut labels = Vec::new();
+        for card in &cards {
+            let allocation: Uuid = card.get("allocation_id");
+            released_ids.push(card.get::<Uuid, _>("gpu_id"));
+            allocation_ids.push(allocation.to_string());
+            labels.push(card.get::<String, _>("gpu_label"));
+            sqlx::query("DELETE FROM reservation_allocations WHERE id=?1")
+                .bind(allocation)
+                .execute(&mut **tx)
+                .await?;
+        }
+        let retained: Vec<String> = sqlx::query_scalar("SELECT n.name || ' / GPU ' || g.display_index FROM reservation_allocations a JOIN gpus g ON g.id=a.gpu_id JOIN nodes n ON n.id=g.node_id WHERE a.reservation_id=?1 ORDER BY n.name,g.display_index")
+            .bind(id).fetch_all(&mut **tx).await?;
+        let empty = retained.is_empty();
+        sqlx::query("UPDATE reservations SET status=CASE WHEN ?2 THEN 'cancelled' ELSE status END,updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id=?1")
+            .bind(id).bind(empty).execute(&mut **tx).await?;
         let content = crate::notification::markdown(
-            "预约已自动释放",
+            if empty {
+                "预约已自动释放"
+            } else {
+                "预约部分 GPU 已自动释放"
+            },
             "warning",
             &[
                 ("用户", row.get("display_name")),
                 ("项目", row.get("project_name")),
-                ("GPU", gpus.join("；")),
+                ("释放 GPU", labels.join("；")),
+                (
+                    "保留 GPU",
+                    if empty {
+                        "无".into()
+                    } else {
+                        retained.join("；")
+                    },
+                ),
                 (
                     "预约时间",
                     format!("{} 至 {}", beijing_time(start), beijing_time(end)),
                 ),
             ],
-            "预约开始已满 30 分钟，仍未检测到本人 GPU 进程，已自动取消预约并释放 GPU 名额。如需继续使用，请重新预约。",
+            if empty {
+                "预约开始已满 30 分钟，所有预约 GPU 均未检测到本人进程，已自动取消预约并释放名额。如需使用，请重新预约。"
+            } else {
+                "预约开始已满 30 分钟，已释放从未检测到本人进程且采样有效的 GPU；已使用过或暂无法可靠判断的 GPU 继续保留。"
+            },
             &state.public_url,
             Utc::now(),
         );
-        sqlx::query("UPDATE reservations SET status='cancelled',updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id=?1").bind(id).execute(&mut **tx).await?;
-        sqlx::query("DELETE FROM reservation_allocations WHERE reservation_id=?1")
-            .bind(id)
-            .execute(&mut **tx)
-            .await?;
         let mentioned: Option<String> = row.get("wecom_user_id");
         sqlx::query("INSERT INTO notification_outbox(id,event_type,dedupe_key,content,mentioned_user_ids) VALUES(?1,'reservation.auto_released',?2,?3,?4) ON CONFLICT(dedupe_key) DO NOTHING")
-            .bind(Uuid::new_v4()).bind(format!("auto-release-{id}")).bind(content).bind(json!(mentioned.into_iter().collect::<Vec<_>>())).execute(&mut **tx).await?;
+            .bind(Uuid::new_v4()).bind(format!("auto-release-{id}-{}", allocation_ids.join("-"))).bind(content).bind(json!(mentioned.into_iter().collect::<Vec<_>>())).execute(&mut **tx).await?;
         sqlx::query("INSERT INTO audit_events(id,actor_id,action,object_type,object_id,detail) VALUES(?1,NULL,'reservation.auto_release','reservation',?2,?3)")
-            .bind(Uuid::new_v4()).bind(id.to_string()).bind(json!({"reason":"no_usage_after_30_minutes","gpuCount":gpus.len()})).execute(&mut **tx).await?;
+            .bind(Uuid::new_v4()).bind(id.to_string()).bind(json!({"reason":"no_usage_after_30_minutes","gpuCount":released_ids.len(),"releasedGpuIds":released_ids,"remainingGpuCount":retained.len()})).execute(&mut **tx).await?;
     }
     Ok(())
 }

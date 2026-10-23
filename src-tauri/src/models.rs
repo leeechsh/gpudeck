@@ -555,7 +555,7 @@ fn default_menu_bar_mode() -> String {
     "compact".into()
 }
 fn default_font_size() -> String {
-    "large".into()
+    "standard".into()
 }
 
 impl Default for AppSettings {
@@ -602,10 +602,10 @@ mod tests {
     }
 
     #[test]
-    fn existing_settings_default_to_large_font_size() {
+    fn existing_settings_default_to_standard_font_size() {
         let mut value = serde_json::to_value(AppSettings::default()).unwrap();
         value.as_object_mut().unwrap().remove("fontSize");
         let settings: AppSettings = serde_json::from_value(value).unwrap();
-        assert_eq!(settings.font_size, "large");
+        assert_eq!(settings.font_size, "standard");
     }
 }
