@@ -363,7 +363,7 @@ async fn create_reservation(
                 ),
                 ("用途", input.purpose.clone()),
             ],
-            "预约开始后超过 30 分钟仍未检测到本人 GPU 进程，将自动释放预约。",
+            "预约开始满 30 分钟后，将逐卡释放从未检测到本人进程的 GPU，保留已使用的 GPU。",
             &state.public_url,
             Utc::now(),
         ),
