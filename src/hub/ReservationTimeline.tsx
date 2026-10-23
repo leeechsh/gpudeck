@@ -92,6 +92,14 @@ export function ReservationTimeline({ onCreate }: { onCreate: () => void }) {
   useLayoutEffect(() => {
     const element = scrollRef.current
     if (!element) return
+    // Measure before scrolling: on first paint the estimated width can make
+    // the browser clamp scrollLeft and incorrectly replace the logical center.
+    if (element.clientWidth > LABEL_WIDTH && element.clientWidth !== viewportWidth) {
+      measuredWidth.current = element.clientWidth
+      pendingCenter.current ??= viewportCenter.current
+      setViewportWidth(element.clientWidth)
+      return
+    }
     // Browser scroll events are asynchronous. Do not interpret scroll events
     // from the previous geometry as user navigation during a resize/rebase.
     programmaticScroll.current = typeof window.requestAnimationFrame === 'function'
@@ -111,7 +119,7 @@ export function ReservationTimeline({ onCreate }: { onCreate: () => void }) {
       const frame = window.requestAnimationFrame(() => { programmaticScroll.current = false })
       return () => window.cancelAnimationFrame(frame)
     }
-  }, [start, windowWidth, windowMs])
+  }, [start, windowWidth, windowMs, viewportWidth])
   const center = (time: number, nextHours = hours) => {
     pendingCenter.current = time
     pendingScroll.current = null
@@ -126,7 +134,7 @@ export function ReservationTimeline({ onCreate }: { onCreate: () => void }) {
   }
   const scroll = () => {
     const element = scrollRef.current
-    if (!element || rebasing.current || programmaticScroll.current) return
+    if (!element || rebasing.current || programmaticScroll.current || element.clientWidth !== viewportWidth) return
     setVisibleStart(start + element.scrollLeft / windowWidth * windowMs)
     viewportCenter.current = start + element.scrollLeft / windowWidth * windowMs + windowMs / 2
     // Recycle three windows instead of appending unbounded DOM nodes.
